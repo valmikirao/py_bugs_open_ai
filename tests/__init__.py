@@ -1,1 +1,1 @@
-"""Unit test package for py_bugs_openapi."""
+"""Unit test package for py_bugs_open_ai."""
