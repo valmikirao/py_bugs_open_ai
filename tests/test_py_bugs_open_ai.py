@@ -173,6 +173,3 @@ def test_chunker(file: str, max_chunk_size: int, abs_max_chunk_size: int, strict
             assert len(child_node) == 0, f'Line #{i} {all_lines[i]!r} has not been accounted for'
         except SyntaxError:
             raise AssertionError(f'Line #{i} {all_lines[i]!r} has not been accounted for')
-
-# Test change.  TODO: remove
-

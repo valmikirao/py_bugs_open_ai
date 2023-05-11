@@ -11,8 +11,12 @@ with open('HISTORY.rst') as history_file:
     history = history_file.read()
 
 requirements = [
-    'Click>=7.0.0<8.0.0',
-    'pydantic>=1.10.7,<2.0.0'
+    'Click>=7.0.0,<8.0.0',
+    'pydantic>=1.10.7,<2.0.0',
+    'diskcache>=5.6.1,<6.0.0',
+    'openai>=0.27.4,<1.0.0',
+    'tiktoken>=0.3.3,<1.0.0',
+    'tenacity>=8.2.2,<9.0.0'
 ]
 
 test_requirements = ['pytest>=3', ]
@@ -50,6 +54,3 @@ setup(
     version='0.1.0',
     zip_safe=False,
 )
-
-# Test change TODO: Remove
-
