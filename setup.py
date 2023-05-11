@@ -34,7 +34,7 @@ setup(
     description="A utility to help use OpenAI to find bugs in large projects or git diffs in python code",
     entry_points={
         'console_scripts': [
-            'py_bugs_open_ai=py_bugs_open_ai.cli:main',
+            'pybugsai=py_bugs_open_ai.cli:main',
         ],
     },
     install_requires=requirements,

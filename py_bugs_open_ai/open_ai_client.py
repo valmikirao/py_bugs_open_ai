@@ -21,10 +21,10 @@ class OpenAiClient:
         retry=retry_if_exception(lambda e: isinstance(e, RateLimitError)),
         wait=wait_exponential(multiplier=2, exp_base=10, max=5 * 60 * 60)
     )
-    def query_messages(self, messages: List[Message]) -> str:
+    def query_messages(self, messages: List[Message], refresh_cache: bool = False) -> str:
         message_dicts = [m.full_dict() for m in messages]
         cache_key = json.dumps(message_dicts, sort_keys=True)
-        if cache_key not in self.cache:
+        if refresh_cache or cache_key not in self.cache:
             # this except secure
             openai.api_key = self.api_key
 
