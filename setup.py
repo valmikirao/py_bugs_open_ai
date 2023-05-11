@@ -11,7 +11,7 @@ with open('HISTORY.rst') as history_file:
     history = history_file.read()
 
 requirements = [
-    'Click>=7.0.0,<8.0.0',
+    'Click>=8.1.3,<9.0.0',
     'pydantic>=1.10.7,<2.0.0',
     'diskcache>=5.6.1,<6.0.0',
     'openai>=0.27.4,<1.0.0',

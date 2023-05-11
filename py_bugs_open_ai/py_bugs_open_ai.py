@@ -1,13 +1,11 @@
 """Main module."""
 import ast
-import json
 import os
 import re
-import time
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from hashlib import md5
-from typing import Iterable, List, Optional, Any, Tuple, NamedTuple, Dict, TypeVar, Type, Union, Sequence, cast
+from typing import Iterable, List, Optional, Any, Tuple, NamedTuple, TypeVar, Type, cast
 from uuid import uuid4, UUID
 import tiktoken
 
@@ -44,7 +42,7 @@ def get_files(path: str = '.', include: str = '*.py', exclude: Optional[List[str
             for dir_item in os.listdir(dir):
                 full_item = os.path.join(dir, dir_item)
                 if os.path.isdir(full_item) and not _is_excluded(dir_item, is_dir=True):
-                   dirs_to_search.append(full_item)
+                    dirs_to_search.append(full_item)
                 elif fnmatch(dir_item, include) and not _is_excluded(dir_item, is_dir=False):
                     yield full_item
             if dirs_to_search:
@@ -76,8 +74,6 @@ class CodeChunk:
         else:
             self.warning = f"{prefix}: {message}"
         return self
-
-
 
 
 T = TypeVar('T')
@@ -172,7 +168,7 @@ class CodeChunker(ast.NodeVisitor):
 
     def chunk_from_node(self, node: ast.AST) -> Optional[CodeChunk]:
         if isinstance(node, ast.stmt):
-                # and any(isinstance(node, type_) for type_ in self.NODE_TYPES_TO_CHUNK):
+            # and any(isinstance(node, type_) for type_ in self.NODE_TYPES_TO_CHUNK):
             return self.make_code_chunk(
                 lineno=coalesce(node.lineno, 0),
                 end_lineno=coalesce(node.end_lineno, 0),
@@ -192,7 +188,7 @@ class CodeChunker(ast.NodeVisitor):
         lines[-1] = lines[-1][:end_col_offset]
         lines = [
             lines[0][col_offset:],
-            *(l[indent_len:] for l in lines[1:])
+            *(line[indent_len:] for line in lines[1:])
         ]
 
         code = '\n'.join(lines) + '\n'
@@ -311,14 +307,15 @@ class FindBugsReturn(NamedTuple):
     is_bug: bool
     description: str
 
+
 class BugFinder:
     FIND_BUGS_SYSTEM_CONTENT = \
         'You are a python bug finder.  Given a snippet of python code, you respond "OK" if you detect no bugs in it' \
         ' and"ERROR: " followed by the error description if you detect an error in it.  Don\'t report import errors' \
         ' packages.'
 
-    def __init__(self, model: str, api_key: str, cache: CacheProtocol[str, str] | None = None, is_bug_re: re.Pattern | None = None,
-                 system_content: str = FIND_BUGS_SYSTEM_CONTENT):
+    def __init__(self, model: str, api_key: str, cache: CacheProtocol[str, str] | None = None,
+                 is_bug_re: re.Pattern | None = None, system_content: str = FIND_BUGS_SYSTEM_CONTENT):
         cache_ = cache if cache is not None else {}
         self.open_ai_client = OpenAiClient(api_key, model=model, cache=cache_)
         self.is_bug_re = is_bug_re if is_bug_re is not None else re.compile(r'^ERROR\b')
@@ -336,7 +333,3 @@ class BugFinder:
         is_bug = bool(self.is_bug_re.search(description))
 
         return FindBugsReturn(is_bug, description)
-
-
-if __name__ == '__main__':
-    print()

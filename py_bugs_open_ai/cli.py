@@ -4,11 +4,10 @@ import os
 import re
 import sys
 from configparser import ConfigParser
-from functools import partial
 from typing import List, Callable, Set, Iterable, Tuple
 
 import click
-from diskcache import Cache as DiskCache  # type: ignore
+from diskcache import Cache as DiskCache
 
 from py_bugs_open_ai.constants import DEFAULT_MODEL, OPEN_AI_API_KEY, DEFAULT_MAX_CHUNK_SIZE, DEFAULT_CACHE, \
     DEFAULT_DIE_AFTER, ERROR_OUT, WARN_OUT, OK_OUT, CLI_NAME, SKIP_OUT
@@ -23,10 +22,12 @@ class StdInIterable:
     def __iter__(self):
         return self
 
-DEFAULT_CONFIG_FILES=[
+
+DEFAULT_CONFIG_FILES = [
     'pybugsai.cfg',
     'setup.cfg'
 ]
+
 
 def _handle_config(ctx: click.Context, param: click.Option, filename: str | None) -> str | None:
     cfg = ConfigParser()
@@ -87,17 +88,18 @@ def main(file: List[str], files_from_stdin: bool, api_key_env_variable: str, mod
     error_chunks: List[CodeChunk] = []
     warning_chunks: List[CodeChunk] = []
 
+    file_iterable: Iterable[str]
     if files_from_stdin:
         file_iterable = StdInIterable()
     else:
         file_iterable = file
 
-    for file in file_iterable:
-        with open(file, 'r') as f:
+    for file_ in file_iterable:
+        with open(file_, 'r') as f:
             code = f.read()
 
         code_chunks = CodeChunker(
-            code, file=file, max_chunk_size=max_chunk_size, model=model, abs_max_chunk_size=abs_max_chunk_size,
+            code, file=file_, max_chunk_size=max_chunk_size, model=model, abs_max_chunk_size=abs_max_chunk_size,
             strict_chunk_size=strict_chunk_size
         ).get_chunks()
         for code_chunk in code_chunks:
