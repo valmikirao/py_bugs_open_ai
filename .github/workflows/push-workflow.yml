@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python: ["3.7", "3.8", "3.9", "3.10", "3.11"]
+        python: ["3.10", "3.11"]
 
     steps:
       - uses: actions/checkout@v3
@@ -46,9 +46,9 @@ jobs:
           path: |
             .venv
             .pybugsai/cache
-          key: pybugsai-${{ hashFiles('setup.py', 'scripts/pybugsai_github.sh') }}-{{ hashFiles('**/*.py') }}
+          key: pybugsai-${{ hashFiles('setup.py', 'scripts/pybugsai_github.sh') }}-${{ hashFiles('**/*.py') }}
           restore-keys: |
-            pybugsai-${{ hashFiles('setup.py', 'scripts/pybugsai_github.sh') }}-{{ hashFiles('**/*.py') }}
+            pybugsai-${{ hashFiles('setup.py', 'scripts/pybugsai_github.sh') }}-${{ hashFiles('**/*.py') }}
             pybugsai-${{ hashFiles('setup.py', 'scripts/pybugsai_github.sh') }}-
             pybugsai-
       - name: Run pybugsai
