@@ -63,9 +63,4 @@ jobs:
       needs: [tox, pybugsai]
       steps:
           - run: |
-              result="${{ needs.build.result }}"
-              if [[ $result == "success"  ]]; then
-                exit 0
-              else
-                exit 1
-              fi
+              [[ "${{ needs.tox.result }}" == "success" ]] && [[ "${{ needs.pybugsai.result }}" == "success" ]]
