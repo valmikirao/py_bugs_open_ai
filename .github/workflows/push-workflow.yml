@@ -53,7 +53,7 @@ jobs:
             pybugsai-
       - name: Run pybugsai
         run: ./scripts/pybugsai_github.sh
-      - env:
+        env:
           OPEN_AI_API_KEY: ${{ secrets.OPEN_AI_API_KEY }}
 
 #  results:
