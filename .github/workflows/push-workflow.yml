@@ -42,8 +42,20 @@ jobs:
           python-version: "3.11"
       - name: hashFiles() test
         run: |
-          echo "${{ hashFiles('*.py') }}"
-          echo "${{ hashFiles('**/*.py') }}"
+          echo "*.py - ${{ hashFiles('*.py') }}"
+          echo "**/*.py - ${{ hashFiles('**/*.py') }}"
+          echo "*.py - ${{ hashFiles('*.py') }}"
+          echo "**/*.py - ${{ hashFiles('**/*.py') }}"
+          echo 'print("stuff")' >> setup.py
+          echo "*.py - ${{ hashFiles('*.py') }}"
+          echo "**/*.py - ${{ hashFiles('**/*.py') }}"
+          echo 'print("stuff")' >> py_bugs_open_ai/cli.py
+          echo "*.py - ${{ hashFiles('*.py') }}"
+          echo "**/*.py - ${{ hashFiles('**/*.py') }}"
+          mkdir py_bugs_open_ai/more
+          echo 'print("stuff")' >> py_bugs_open_ai/more/tmp.py
+          echo "*.py - ${{ hashFiles('*.py') }}"
+          echo "**/*.py - ${{ hashFiles('**/*.py') }}"
 
 #      - name: Use Python Bugs Ai cache
 #        uses: actions/cache@v3
