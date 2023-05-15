@@ -1,19 +1,23 @@
 """Main module."""
 import ast
+import itertools
 import os
 import re
 from dataclasses import dataclass
 from fnmatch import fnmatch
+from functools import lru_cache
 from hashlib import md5
-from typing import Iterable, List, Optional, Any, Tuple, NamedTuple, TypeVar, Type, cast
+from typing import Iterable, List, Optional, Any, Tuple, NamedTuple, TypeVar, Type, cast, MutableMapping, Callable
 from uuid import uuid4, UUID
 import tiktoken
+import yaml
+from scipy import spatial
 
 from py_bugs_open_ai.constants import DEFAULT_MODEL
 from .models.base import CacheProtocol
+from .models.examples import ExamplesFile, Example
 from .models.open_ai import Message, Role
-from .open_ai_client import OpenAiClient
-
+from .open_ai_client import OpenAiClient, EmbeddingItem
 
 AstT = TypeVar('AstT', bound=ast.AST)
 
@@ -314,10 +318,9 @@ class BugFinder:
         ' and"ERROR: " followed by the error description if you detect an error in it.  Don\'t report import errors' \
         ' packages.'
 
-    def __init__(self, model: str, api_key: str, cache: CacheProtocol[str, str] | None = None,
-                 is_bug_re: re.Pattern | None = None, system_content: str = FIND_BUGS_SYSTEM_CONTENT):
-        cache_ = cache if cache is not None else {}
-        self.open_ai_client = OpenAiClient(api_key, model=model, cache=cache_)
+    def __init__(self, open_ai_client: OpenAiClient, is_bug_re: re.Pattern | None = None,
+                 system_content: str = FIND_BUGS_SYSTEM_CONTENT):
+        self.open_ai_client = open_ai_client
         self.is_bug_re = is_bug_re if is_bug_re is not None else re.compile(r'^ERROR\b')
         self.system_content = system_content
 
@@ -333,3 +336,105 @@ class BugFinder:
         is_bug = bool(self.is_bug_re.search(description))
 
         return FindBugsReturn(is_bug, description)
+
+
+class QueryConstructor:
+    def __init__(self, open_ai_client: OpenAiClient, examples_file: str, max_tokens_to_send: int, system_content: str,
+                 model: str = DEFAULT_MODEL):
+        self.open_ai_client = open_ai_client
+        self.max_tokens_to_send = max_tokens_to_send
+        self.system_content = system_content
+        self.model = model  # for getting token count
+        self._token_count_cache: CacheProtocol[str, int] = {}
+        self._embeddings_by_text: CacheProtocol[str, List[float]] = {}
+
+        if os.path.exists(examples_file):
+            with open(examples_file, 'r') as f:
+                examples_obj = yaml.full_load(f)
+            examples_file = ExamplesFile.parse_obj(examples_obj)
+            self.examples = examples_file.examples
+        else:
+            self.examples: List[Example] = []
+
+    def get_token_count(self, code: str, refresh_cache: bool = False) -> int:
+        """Return the number of tokens in a string."""
+        if refresh_cache or code not in self._token_count_cache:
+            encoding = tiktoken.encoding_for_model(self.model)
+            self._token_count_cache[code] = len(encoding.encode(code))
+        return self._token_count_cache[code]
+
+    def _get_token_count_sum(self, messages: List[Message]) -> int:
+        return sum(self.get_token_count(m.content) for m in messages)
+
+    def _get_starting_messages(self, query: str) -> List[Message]:
+        return [
+            Message(role=Role.system, content=self.system_content),
+            Message(role=Role.user, content=query),
+        ]
+
+    def add_examples_to_query(self, query: str) -> List[Message]:
+        filter_examples = self.will_filter_examples(query)
+
+        if filter_examples:
+            return self._add_examples_filtered(query)
+        else:
+            return self._add_examples_all(query)
+
+    def will_filter_examples(self, query: str) -> bool:
+        starting_messages = self._get_starting_messages(query)
+        token_count = self._get_token_count_sum(starting_messages)
+        for example in self.examples:
+            token_count += self.get_token_count(example.code)
+            if token_count > self.max_tokens_to_send:
+                filter_examples = True
+                break
+        else:
+            filter_examples = False
+        return filter_examples
+
+    def _add_examples_all(self, query: str) -> List[Message]:
+        starting_messages = self._get_starting_messages(query)
+        return_messages = [starting_messages[0]]
+        for example in self.examples:
+            return_messages.append(Message(
+                role=Role.user,
+                content=example.code,
+            ))
+            return_messages.append(Message(
+                role=Role.agent,
+                content=example.code
+            ))
+        return return_messages
+
+    @staticmethod
+    def _sorted(to_sort: Iterable[T], key: Callable[[T], Any]) -> Iterable[T]:
+        to_sort_keyed = map(lambda x: (key(x), x), to_sort)
+        sorted_keyed = sorted(to_sort_keyed, key=lambda x: x[0])
+        yield from map(lambda x: x[1], sorted_keyed)
+
+    def _add_examples_filtered(self, query: str) -> List[Message]:
+        starting_messages = self._get_starting_messages(query)
+        if self._embeddings_by_text == {}:
+            texts_iter = itertools.chain((e.code for e in self.examples), starting_messages[-1].content)
+            embeddings = self.open_ai_client.get_embeddings(texts=texts_iter)
+            self._embeddings_by_text = {text: embeddings for text, embeddings in embeddings}
+
+        query_embeddings = self._embeddings_by_text[starting_messages[-1].content]
+
+        def _rank(example: Example):
+            return 1 - spatial.distance.cosine(query_embeddings, self._embeddings_by_text[example.code])
+        sorted_examples = self._sorted(self.examples, key=_rank)
+
+        return_messages = starting_messages
+        token_count = self._get_token_count_sum(starting_messages)
+        for example in sorted_examples:
+            token_count += self.get_token_count(example.code) + self.get_token_count(example.response)
+            if token_count > self.max_tokens_to_send:
+                return return_messages  # return examples without latest
+            return_messages = [
+                *return_messages[:-1],
+                Message(role=Role.user, content=example.code),
+                Message(role=Role.agent, content=example.response),
+                return_messages[-1]
+            ]
+        return return_messages  # we shouldn't get here, but :shrug:

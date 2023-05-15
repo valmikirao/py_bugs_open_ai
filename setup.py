@@ -14,7 +14,7 @@ requirements = [
     'Click>=8.1.3,<9.0.0',
     'pydantic>=1.10.7,<2.0.0',
     'diskcache>=5.6.1,<6.0.0',
-    'openai>=0.27.4,<1.0.0',
+    'openai[embeddings]>=0.27.4,<1.0.0',
     'tiktoken>=0.3.3,<1.0.0',
     'tenacity>=8.2.2,<9.0.0'
 ]

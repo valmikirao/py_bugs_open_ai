@@ -4,23 +4,15 @@ import os
 import re
 import sys
 from configparser import ConfigParser
-from typing import List, Callable, Set, Iterable, Tuple
+from typing import List, Callable, Set, Iterable, Tuple, Dict, Iterator
 
 import click
 from diskcache import Cache as DiskCache
 
 from py_bugs_open_ai.constants import DEFAULT_MODEL, OPEN_AI_API_KEY, DEFAULT_MAX_CHUNK_SIZE, DEFAULT_CACHE, \
-    DEFAULT_DIE_AFTER, ERROR_OUT, WARN_OUT, OK_OUT, CLI_NAME, SKIP_OUT
-from py_bugs_open_ai.py_bugs_open_ai import CodeChunker, BugFinder, CodeChunk
-
-
-class StdInIterable:
-    def __next__(self):
-        line = next(sys.stdin)
-        return line.strip('\n')
-
-    def __iter__(self):
-        return self
+    DEFAULT_DIE_AFTER, ERROR_OUT, WARN_OUT, OK_OUT, CLI_NAME, SKIP_OUT, DEFAULT_EXAMPLE_FILE
+from py_bugs_open_ai.open_ai_client import OpenAiClient
+from py_bugs_open_ai.py_bugs_open_ai import CodeChunker, BugFinder, CodeChunk, QueryConstructor
 
 
 DEFAULT_CONFIG_FILES = [
@@ -50,6 +42,13 @@ def _handle_skip_chunks(ctx: click.Context, param: click.Option, skip_chunks: Tu
     return set(flattened_split_skip_chunks)
 
 
+def get_bug_finder_cache_dir(cache_dir: str) -> str:
+    return os.path.join(cache_dir, 'bug_finder')
+
+def get_embeddings_cache_dir(cache_dir: str) -> str:
+    return os.path.join(cache_dir, 'embeddings')
+
+
 @click.command()
 @click.argument('file', nargs=-1)
 @click.option('--config', '-c', callback=_handle_config)
@@ -63,14 +62,30 @@ def _handle_skip_chunks(ctx: click.Context, param: click.Option, skip_chunks: Tu
 @click.option('--die-after', type=click.INT, default=DEFAULT_DIE_AFTER)
 @click.option('--strict-chunk-size', '--strict', is_flag=True)
 @click.option('--skip-chunks', multiple=True, callback=_handle_skip_chunks)
+@click.option('--example-file', default=DEFAULT_EXAMPLE_FILE)
 def main(file: List[str], files_from_stdin: bool, api_key_env_variable: str, model: str, max_chunk_size: int,
          abs_max_chunk_size: int, cache_dir: str, refresh_cache: bool, die_after: int,
          strict_chunk_size: bool, config: str, skip_chunks: Set[str]) -> int:
     """Console script for py_bugs_openapi."""
     api_key = os.environ[api_key_env_variable]
     os.makedirs(cache_dir, exist_ok=True)
-    cache = DiskCache(cache_dir)
-    bug_finder = BugFinder(model=model, api_key=api_key, cache=cache)
+    query_cache = DiskCache(get_bug_finder_cache_dir(cache_dir))
+    embeddings_cache = DiskCache(get_embeddings_cache_dir(cache_dir))
+    open_ai_client = OpenAiClient(
+        api_key=api_key,
+        model=model,
+        embedding_model=embeddings_model,
+        query_cache=query_cache,
+        embeddings_cache=embeddings_cache,
+    )
+    bug_finder = BugFinder(open_ai_client)
+    query_constructor = QueryConstructor(
+        open_ai_client=open_ai_client,
+        max_tokens_to_send=max_tokens_to_send,
+        system_content=system_content,
+        model=model
+    )
+
 
     def _color_func(color: str) -> Callable[[str], str]:
         def _func(message: str) -> str:
@@ -88,20 +103,37 @@ def main(file: List[str], files_from_stdin: bool, api_key_env_variable: str, mod
     error_chunks: List[CodeChunk] = []
     warning_chunks: List[CodeChunk] = []
 
-    file_iterable: Iterable[str]
+    file_list: List[str]
     if files_from_stdin:
-        file_iterable = StdInIterable()
+        file_list = [l.strip('\n') for l in sys.stdin.read()]
     else:
-        file_iterable = file
+        file_list = file
 
-    for file_ in file_iterable:
+    chunks_by_file: Dict[str, List[CodeChunk]] = {}
+    for file_ in file_list:
         with open(file_, 'r') as f:
             code = f.read()
 
-        code_chunks = CodeChunker(
+        chunks_by_file[file_] = list(CodeChunker(
             code, file=file_, max_chunk_size=max_chunk_size, model=model, abs_max_chunk_size=abs_max_chunk_size,
             strict_chunk_size=strict_chunk_size
-        ).get_chunks()
+        ).get_chunks())
+
+    # prime the embeddings cache if needed
+    chunks_that_need_embeddings: List[CodeChunk] = []
+    chunk: CodeChunk
+    for chunk in itertools.chain(*chunks_by_file.values()):
+        if query_constructor.will_filter_examples(chunk.code):
+            chunks_that_need_embeddings.append(chunk)
+    if len(chunks_that_need_embeddings) > 0:
+        texts_iter: Iterator[str] = itertools.chain(
+            (c.code for c in chunks_that_need_embeddings),
+            (e.code for e in query_constructor.examples)
+        )
+        open_ai_client.get_embeddings(texts=texts_iter)
+
+    for file_ in file_list:
+        code_chunks = chunks_by_file[file_]
         for code_chunk in code_chunks:
             click.echo(f"{_chunk_header(code_chunk)} - ", nl=False)
 
