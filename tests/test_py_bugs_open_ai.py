@@ -5,6 +5,7 @@ import itertools
 import os
 import re
 from typing import List, Any, NamedTuple, Set
+from .constants import BASE_DIR
 
 import pytest
 import tiktoken
@@ -50,7 +51,6 @@ class ExpectedChunk(BaseModel):
             return super().__eq__(other)
 
 
-BASE_DIR, _ = os.path.split(os.path.dirname(__file__))
 BASE_CHUNKER_PARAM_DIR = os.path.join(BASE_DIR, 'tests', 'resources', 'test-chunker-params')
 
 

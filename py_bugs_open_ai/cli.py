@@ -4,13 +4,14 @@ import os
 import re
 import sys
 from configparser import ConfigParser
-from typing import List, Callable, Set, Iterable, Tuple
+from typing import List, Callable, Set, Iterable, Tuple, MutableMapping
 
 import click
 from diskcache import Cache as DiskCache
 
 from py_bugs_open_ai.constants import DEFAULT_MODEL, OPEN_AI_API_KEY, DEFAULT_MAX_CHUNK_SIZE, DEFAULT_CACHE, \
     DEFAULT_DIE_AFTER, ERROR_OUT, WARN_OUT, OK_OUT, CLI_NAME, SKIP_OUT
+from py_bugs_open_ai.diff import get_lines_diffs_by_file
 from py_bugs_open_ai.py_bugs_open_ai import CodeChunker, BugFinder, CodeChunk
 
 
@@ -63,9 +64,10 @@ def _handle_skip_chunks(ctx: click.Context, param: click.Option, skip_chunks: Tu
 @click.option('--die-after', type=click.INT, default=DEFAULT_DIE_AFTER)
 @click.option('--strict-chunk-size', '--strict', is_flag=True)
 @click.option('--skip-chunks', multiple=True, callback=_handle_skip_chunks)
+@click.option('--diff-from-stdin', '--diff-in', is_flag=True)
 def main(file: List[str], files_from_stdin: bool, api_key_env_variable: str, model: str, max_chunk_size: int,
          abs_max_chunk_size: int, cache_dir: str, refresh_cache: bool, die_after: int,
-         strict_chunk_size: bool, config: str, skip_chunks: Set[str]) -> int:
+         strict_chunk_size: bool, config: str, skip_chunks: Set[str], diff_from_stdin) -> int:
     """Console script for py_bugs_openapi."""
     api_key = os.environ[api_key_env_variable]
     os.makedirs(cache_dir, exist_ok=True)
@@ -89,8 +91,12 @@ def main(file: List[str], files_from_stdin: bool, api_key_env_variable: str, mod
     warning_chunks: List[CodeChunk] = []
 
     file_iterable: Iterable[str]
+    line_diffs_by_file: MutableMapping[str, Set[int]] = {}
     if files_from_stdin:
         file_iterable = StdInIterable()
+    elif diff_from_stdin:
+        line_diffs_by_file = get_lines_diffs_by_file(sys.stdin)
+        file_iterable = sorted(line_diffs_by_file.keys())
     else:
         file_iterable = file
 
@@ -105,22 +111,33 @@ def main(file: List[str], files_from_stdin: bool, api_key_env_variable: str, mod
         for code_chunk in code_chunks:
             click.echo(f"{_chunk_header(code_chunk)} - ", nl=False)
 
-            if code_chunk.error is None and code_chunk.warning is None:
+            if diff_from_stdin:
+                chunk_linenos = range(code_chunk.lineno, code_chunk.end_lineno)
+                if any(lineno in line_diffs_by_file[file_] for lineno in chunk_linenos):
+                    skip_because_not_in_diff = False
+                else:
+                    skip_because_not_in_diff = True
+            else:
+                skip_because_not_in_diff = False
+
+            if not skip_because_not_in_diff and code_chunk.error is None and code_chunk.warning is None:
                 has_bugs, bugs_description = bug_finder.find_bugs(code_chunk.code, refresh_cache=refresh_cache)
                 if has_bugs:
                     code_chunk.error = bugs_description
             code_chunk_hash = code_chunk.get_hash()
-            if code_chunk.error is not None and code_chunk_hash not in skip_chunks:
+            if not skip_because_not_in_diff and code_chunk.error is not None and code_chunk_hash not in skip_chunks:
                 click.echo(ERROR_OUT)
                 error_chunks.append(code_chunk)
-            if code_chunk.error is not None and code_chunk_hash in skip_chunks:
+            if not skip_because_not_in_diff and code_chunk.error is not None and code_chunk_hash in skip_chunks:
                 click.echo(SKIP_OUT)
                 code_chunk.warning = 'SKIPPED: ' + code_chunk.error
                 code_chunk.error = None
                 warning_chunks.append(code_chunk)
-            elif code_chunk.warning is not None:
+            elif not skip_because_not_in_diff and code_chunk.warning is not None:
                 click.echo(WARN_OUT)
                 warning_chunks.append(code_chunk)
+            elif skip_because_not_in_diff:
+                click.echo(SKIP_OUT)
             else:
                 click.echo(OK_OUT)
 
