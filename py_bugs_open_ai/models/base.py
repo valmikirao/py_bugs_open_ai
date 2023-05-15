@@ -20,5 +20,5 @@ class CacheProtocol(Protocol[K, V]):
     def __setitem__(self, key: K, value: V) -> None:
         ...
 
-    def __contains__(self, item: V) -> bool:
+    def __contains__(self, item: K) -> bool:
         ...
