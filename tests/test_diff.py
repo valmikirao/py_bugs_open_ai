@@ -18,11 +18,12 @@ def test_get_lines_diffs_by_file():
             files = os.listdir(from_dir)
             for file in files:
                 shutil.copy(os.path.join(from_dir, file), os.path.join(tmp_dir, file))
-        subprocess.check_output(['git', 'init'], stderr=subprocess.STDOUT)
+        subprocess.check_call(['git', 'init'])
         _cp_from(PY_RESOURCES_DIR)
-        subprocess.check_output(['git', 'add', '.'], stderr=subprocess.STDOUT)
-        author = 'Testing <testing@testing.com>'
-        subprocess.check_output(['git', 'commit', '--author', author, '-m', 'TESTING'], stderr=subprocess.STDOUT)
+        subprocess.check_call(['git', 'add', '.'])
+        subprocess.check_call(['git', 'config', '--local', 'user.name', 'Test'])
+        subprocess.check_call(['git', 'config', '--local', 'user.email', 'test@test.com'])
+        subprocess.check_call(['git', 'commit', '-m', 'TESTING'])
         _cp_from(DIFF_RESOURCES_DIR)
         diff = subprocess.Popen(['git', 'diff'], stdout=subprocess.PIPE)
         actual = dict(get_lines_diffs_by_file(line.decode() for line in diff.stdout))
