@@ -21,7 +21,8 @@ def test_get_lines_diffs_by_file():
         subprocess.check_output(['git', 'init'], stderr=subprocess.STDOUT)
         _cp_from(PY_RESOURCES_DIR)
         subprocess.check_output(['git', 'add', '.'], stderr=subprocess.STDOUT)
-        subprocess.check_output(['git', 'commit', '-m', 'TESTING'], stderr=subprocess.STDOUT)
+        author = 'Testing <testing@testing.com>'
+        subprocess.check_output(['git', 'commit', '--author', author, '-m', 'TESTING'], stderr=subprocess.STDOUT)
         _cp_from(DIFF_RESOURCES_DIR)
         diff = subprocess.Popen(['git', 'diff'], stdout=subprocess.PIPE)
         actual = dict(get_lines_diffs_by_file(line.decode() for line in diff.stdout))
