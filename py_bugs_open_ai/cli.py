@@ -10,7 +10,7 @@ import click
 from diskcache import Cache as DiskCache
 
 from py_bugs_open_ai.constants import DEFAULT_MODEL, OPEN_AI_API_KEY, DEFAULT_MAX_CHUNK_SIZE, DEFAULT_CACHE, \
-    DEFAULT_DIE_AFTER, ERROR_OUT, WARN_OUT, OK_OUT, CLI_NAME, SKIP_OUT
+    DEFAULT_DIE_AFTER, ERROR_OUT, WARN_OUT, OK_OUT, CLI_NAME, SKIP_OUT, NOT_IN_DIFF_OUT
 from py_bugs_open_ai.diff import get_lines_diffs_by_file
 from py_bugs_open_ai.py_bugs_open_ai import CodeChunker, BugFinder, CodeChunk
 
@@ -128,7 +128,7 @@ def main(file: List[str], files_from_stdin: bool, api_key_env_variable: str, mod
             if not skip_because_not_in_diff and code_chunk.error is not None and code_chunk_hash not in skip_chunks:
                 click.echo(ERROR_OUT)
                 error_chunks.append(code_chunk)
-            if not skip_because_not_in_diff and code_chunk.error is not None and code_chunk_hash in skip_chunks:
+            elif not skip_because_not_in_diff and code_chunk.error is not None and code_chunk_hash in skip_chunks:
                 click.echo(SKIP_OUT)
                 code_chunk.warning = 'SKIPPED: ' + code_chunk.error
                 code_chunk.error = None
@@ -137,7 +137,7 @@ def main(file: List[str], files_from_stdin: bool, api_key_env_variable: str, mod
                 click.echo(WARN_OUT)
                 warning_chunks.append(code_chunk)
             elif skip_because_not_in_diff:
-                click.echo(SKIP_OUT)
+                click.echo(NOT_IN_DIFF_OUT)
             else:
                 click.echo(OK_OUT)
 
@@ -169,4 +169,5 @@ def main(file: List[str], files_from_stdin: bool, api_key_env_variable: str, mod
 
 
 if __name__ == "__main__":
+    # sys imported above (pybugsai)
     sys.exit(main())  # pragma: no cover
