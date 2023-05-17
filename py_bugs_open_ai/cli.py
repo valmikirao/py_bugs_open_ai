@@ -133,8 +133,8 @@ def main(file: List[str], files_from_stdin: bool, api_key_env_variable: str, mod
     _green = _color_func('\033[92m')
 
     def _chunk_header(chunk: CodeChunk) -> str:
-        return f"{chunk.file}:{code_chunk.lineno}-{code_chunk.end_lineno};" \
-               f" {chunk.get_hash()} token count: {code_chunk.token_count}"
+        return f"{chunk.file}:{chunk.lineno}-{chunk.end_lineno};" \
+               f" {chunk.get_hash()} token count: {chunk.token_count}"
 
     error_chunks: List[CodeChunk] = []
     warning_chunks: List[CodeChunk] = []
