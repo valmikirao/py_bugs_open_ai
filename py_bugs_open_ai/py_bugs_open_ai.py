@@ -9,7 +9,7 @@ from typing import Iterable, List, Optional, Any, Tuple, NamedTuple, TypeVar, Ty
 from uuid import uuid4, UUID
 import tiktoken
 
-from py_bugs_open_ai.constants import DEFAULT_MODEL
+from py_bugs_open_ai.constants import DEFAULT_MODEL, DEFAULT_IS_BUG_RE, FIND_BUGS_SYSTEM_CONTENT
 from .models.base import CacheProtocol
 from .models.open_ai import Message, Role
 from .open_ai_client import OpenAiClient
@@ -309,16 +309,11 @@ class FindBugsReturn(NamedTuple):
 
 
 class BugFinder:
-    FIND_BUGS_SYSTEM_CONTENT = \
-        'You are a python bug finder.  Given a snippet of python code, you respond "OK" if you detect no bugs in it' \
-        ' and"ERROR: " followed by the error description if you detect an error in it.  Don\'t report import errors' \
-        ' packages.'
-
     def __init__(self, model: str, api_key: str, cache: CacheProtocol[str, str] | None = None,
                  is_bug_re: re.Pattern | None = None, system_content: str = FIND_BUGS_SYSTEM_CONTENT):
         cache_ = cache if cache is not None else {}
         self.open_ai_client = OpenAiClient(api_key, model=model, cache=cache_)
-        self.is_bug_re = is_bug_re if is_bug_re is not None else re.compile(r'^ERROR\b')
+        self.is_bug_re = is_bug_re if is_bug_re is not None else re.compile(DEFAULT_IS_BUG_RE)
         self.system_content = system_content
 
     def get_query_messages(self, code: str) -> List[Message]:

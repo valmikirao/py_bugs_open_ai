@@ -4,11 +4,15 @@
 
 from setuptools import setup, find_packages
 
-with open('README.rst') as readme_file:
-    readme = readme_file.read()
+from setup_constants import SHORT_DESCRIPTION, AUTHOR, AUTHOR_EMAIL
 
-with open('HISTORY.rst') as history_file:
-    history = history_file.read()
+# with open('README.rst') as readme_file:
+#     readme = readme_file.read()
+#
+# with open('HISTORY.rst') as history_file:
+#     history = history_file.read()
+
+readme = 'TBD'
 
 requirements = [
     'Click>=8.1.3,<9.0.0',
@@ -22,8 +26,8 @@ requirements = [
 test_requirements = ['pytest>=3', ]
 
 setup(
-    author="Valmiki Rao",
-    author_email='valmikirao@gmail.com',
+    author=AUTHOR,
+    author_email=AUTHOR_EMAIL,
     python_requires='>=3.6',
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',
@@ -34,7 +38,7 @@ setup(
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
     ],
-    description="A utility to help use OpenAI to find bugs in large projects or git diffs in python code",
+    description=SHORT_DESCRIPTION,
     entry_points={
         'console_scripts': [
             'pybugsai=py_bugs_open_ai.cli:main',
@@ -42,7 +46,7 @@ setup(
     },
     install_requires=requirements,
     license="GNU General Public License v3",
-    long_description=readme + '\n\n' + history,
+    long_description=readme,
     include_package_data=True,
     keywords='py_bugs_open_ai',
     name='py_bugs_open_ai',
