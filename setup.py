@@ -4,7 +4,7 @@
 
 from setuptools import setup, find_packages
 
-from setup_constants import SHORT_DESCRIPTION, AUTHOR, AUTHOR_EMAIL
+from setup_constants import SHORT_DESCRIPTION, AUTHOR, AUTHOR_EMAIL, CLI_NAME
 
 # with open('README.rst') as readme_file:
 #     readme = readme_file.read()
@@ -41,7 +41,7 @@ setup(
     description=SHORT_DESCRIPTION,
     entry_points={
         'console_scripts': [
-            'pybugsai=py_bugs_open_ai.cli:main',
+            f"{CLI_NAME}=py_bugs_open_ai.cli:main",
         ],
     },
     install_requires=requirements,

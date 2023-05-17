@@ -5,7 +5,7 @@ from scripts.generate_readme import render_readme
 
 
 def test_docs():
-    """ Just make sure the README.md has be properly generated"""
+    """ Just make sure the README.md has been properly generated"""
     rendered_readme = render_readme()
     readme_path = os.path.join(ROOT_DIR, 'README.md')
     with open(readme_path, 'r') as f:
