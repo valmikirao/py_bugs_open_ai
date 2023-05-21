@@ -4,7 +4,15 @@
 import itertools
 import os
 import re
-from typing import List, Any, NamedTuple, Set
+from random import Random
+from typing import List, Any, NamedTuple, Set, cast, Iterable, Optional
+from unittest.mock import create_autospec
+
+from conftest import ExampleWithEmbeds
+from py_bugs_open_ai.models.examples import ExamplesFile, Example
+from py_bugs_open_ai.models.open_ai import Message, Role
+from py_bugs_open_ai.open_ai_client import OpenAiClient, EmbeddingItem
+from .constants import BASE_DIR
 
 import pytest
 import tiktoken
@@ -13,7 +21,7 @@ from pydantic import BaseModel
 
 import ast
 from py_bugs_open_ai.constants import DEFAULT_MODEL
-from py_bugs_open_ai.py_bugs_open_ai import CodeChunker, CodeChunk
+from py_bugs_open_ai.py_bugs_open_ai import CodeChunker, CodeChunk, _cosine_wrapper, QueryConstructor
 
 
 @pytest.mark.parametrize("total_token_count,max_chunk_size,expected", [
@@ -50,12 +58,9 @@ class ExpectedChunk(BaseModel):
             return super().__eq__(other)
 
 
-BASE_DIR, _ = os.path.split(os.path.dirname(__file__))
-BASE_CHUNKER_PARAM_DIR = os.path.join(BASE_DIR, 'tests', 'resources', 'test-chunker-params')
-
 
 class ChunkerParametrize(NamedTuple):
-    file: str = os.path.join(BASE_CHUNKER_PARAM_DIR, 'test-1.py')
+    file: str = 'test-1.py'
     max_chunk_size: int = 50
     abs_max_chunk_size: int = -1
     strict_chunk_size: bool = False
@@ -70,17 +75,13 @@ class ChunkerParametrize(NamedTuple):
             'expected_warnings_i', [
                 cls(expected_token_counts=[37, 30, 13, 37, 10]),
                 cls(max_chunk_size=20, expected_token_counts=[16, 16, 11, 14, 13, 18, 18, 10]),
-                cls(file=os.path.join(BASE_CHUNKER_PARAM_DIR, 'test-long-list.py'), expected_token_counts=[284],
-                    expected_warnings_i={0}),
-                cls(file=os.path.join(BASE_CHUNKER_PARAM_DIR, 'test-long-list.py'), expected_token_counts=[284],
-                    expected_errors_i={0}, strict_chunk_size=True),
-                cls(file=os.path.join(BASE_CHUNKER_PARAM_DIR, 'test-long-list.py'), expected_token_counts=[284],
-                    abs_max_chunk_size=300),
-                cls(file=os.path.join(BASE_CHUNKER_PARAM_DIR, 'test-multi-peer-groups.py'),
-                    expected_token_counts=[27, 31, 44, 29, 43, 44]),
-                cls(file=os.path.join(BASE_CHUNKER_PARAM_DIR, 'test-multi-peer-groups.py'), max_chunk_size=200,
-                    expected_token_counts=[104, 118]),
-                cls(file=os.path.join(BASE_CHUNKER_PARAM_DIR, 'test-multi-peer-groups.py'), max_chunk_size=20,
+                cls(file='test-long-list.py', expected_token_counts=[284], expected_warnings_i={0}),
+                cls(file='test-long-list.py', expected_token_counts=[284], expected_errors_i={0},
+                    strict_chunk_size=True),
+                cls(file='test-long-list.py', expected_token_counts=[284], abs_max_chunk_size=300),
+                cls(file='test-multi-peer-groups.py', expected_token_counts=[27, 31, 44, 29, 43, 44]),
+                cls(file='test-multi-peer-groups.py', max_chunk_size=200, expected_token_counts=[104, 118]),
+                cls(file='test-multi-peer-groups.py', max_chunk_size=20,
                     expected_token_counts=[6, 7, 14, 11, 18, 11, 9, 19, 3, 6, 7, 16, 11, 9, 18, 3, 11, 9, 19, 3])
             ]
         )
@@ -88,13 +89,15 @@ class ChunkerParametrize(NamedTuple):
 
 @ChunkerParametrize.parametrize()
 def test_chunker(file: str, max_chunk_size: int, abs_max_chunk_size: int, strict_chunk_size: bool,
-                 expected_token_counts: List[int], expected_errors_i: Set[int], expected_warnings_i: Set[int]):
-    with open(file, 'r') as f:
+                 expected_token_counts: List[int], expected_errors_i: Set[int], expected_warnings_i: Set[int],
+                 base_chunker_param_dir: str):
+    file_ = os.path.join(base_chunker_param_dir, file)
+    with open(file_, 'r') as f:
         code = f.read()
 
     chunker = CodeChunker(
         code=code,
-        file=file,
+        file=file_,
         max_chunk_size=max_chunk_size,
         abs_max_chunk_size=abs_max_chunk_size,
         strict_chunk_size=strict_chunk_size
@@ -143,3 +146,94 @@ def test_chunker(file: str, max_chunk_size: int, abs_max_chunk_size: int, strict
             assert len(child_node) == 0, f'Line #{i} {all_lines[i]!r} has not been accounted for'
         except SyntaxError:
             raise AssertionError(f'Line #{i} {all_lines[i]!r} has not been accounted for')
+
+
+@pytest.fixture
+def max_tokens_to_send(request: Any) -> int:
+    marker = request.node.get_closest_marker("max_tokens_to_send")
+    assert_message = 'To use this fixture test function needs to have max_tokens_to_send marker passed one argument' \
+                     ' of type int'
+    assert marker is not None, assert_message
+    assert len(marker.args) == 1, assert_message
+    assert isinstance(marker.args[0], int), assert_message
+
+    return marker.args[0]
+
+
+@pytest.fixture
+def system_content() -> str:
+    return 'You are a tester, good jorb!!!'
+
+
+@pytest.fixture
+def code() -> str:
+    return 'print("Hello World")'
+
+
+@pytest.fixture
+def examples_added_query(examples_file: ExamplesFile, max_tokens_to_send: int, code: str, system_content: str) \
+        -> List[Message]:
+    mock_open_ai_client = create_autospec(OpenAiClient, instance=True)
+
+    example_embeddings_by_text = {
+        e.code: cast(ExampleWithEmbeds, e).embeddings for e in examples_file.examples
+    }
+
+    def _get_embedding_for_text(text: str) -> List[float]:
+        if text in example_embeddings_by_text:
+            return example_embeddings_by_text[text]
+        elif text == code:
+            return [1.0, 0.0]
+        else:
+            raise AssertionError(f"Illegal text: {text!r}")
+
+    def _mock_get_embeddings(texts: Iterable[str]) -> Iterable[EmbeddingItem]:
+        return_value = [
+            EmbeddingItem(t, _get_embedding_for_text(t)) for t in texts
+        ]
+        Random(777).shuffle(return_value)
+        return return_value
+
+    mock_open_ai_client.get_embeddings.side_effect = _mock_get_embeddings
+
+    query_constructor = QueryConstructor(
+        open_ai_client=mock_open_ai_client,
+        examples=examples_file.examples,
+        max_tokens_to_send=max_tokens_to_send,
+        system_content=system_content
+    )
+    query = query_constructor.add_examples_to_query(code)
+
+    return query
+
+
+@pytest.mark.max_tokens_to_send(90)
+def test_add_examples_to_query(examples_added_query: List[Message], system_content: str, examples_file: ExamplesFile,
+                               code: str):
+    expected_query = [Message(role=Role.system, content=system_content)]
+    for expected_example in reversed(examples_file.examples[2:]):
+        expected_query.extend([
+            Message(role=Role.user, content=expected_example.code),
+            Message(role=Role.agent, content=expected_example.response)
+        ])
+    expected_query.append(
+        Message(role=Role.user, content=code)
+    )
+
+    assert examples_added_query == expected_query
+
+
+@pytest.mark.max_tokens_to_send(150)
+def test_add_all_examples_to_query(examples_added_query: List[Message], system_content: str,
+                                   examples_file: ExamplesFile, code: str):
+    expected_query = [Message(role=Role.system, content=system_content)]
+    for expected_example in examples_file.examples:
+        expected_query.extend([
+            Message(role=Role.user, content=expected_example.code),
+            Message(role=Role.agent, content=expected_example.response)
+        ])
+    expected_query.append(
+        Message(role=Role.user, content=code)
+    )
+
+    assert examples_added_query == expected_query

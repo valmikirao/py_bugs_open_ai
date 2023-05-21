@@ -1,4 +1,4 @@
-.PHONY: clean clean-build clean-pyc clean-test coverage dist docs help install lint lint/flake8
+.PHONY: clean clean-pyc clean-test dist help install lint
 .DEFAULT_GOAL := help
 
 define BROWSER_PYSCRIPT
@@ -47,10 +47,9 @@ clean-test: ## remove test and coverage artifacts
 	rm -fr htmlcov/
 	rm -fr .pytest_cache
 
-lint/flake8: ## check style with flake8
+lint: ## check style with flake8
 	flake8 py_bugs_open_ai tests
-
-lint: lint/flake8 ## check style
+	mypy setup.py py_bugs_open_ai tests
 
 test: ## run tests quickly with the default Python
 	pytest
@@ -65,15 +64,8 @@ coverage: ## check code coverage quickly with the default Python
 	$(BROWSER) htmlcov/index.html
 
 docs: ## generate Sphinx HTML documentation, including API docs
-	rm -f docs/py_bugs_open_ai.rst
-	rm -f docs/modules.rst
-	sphinx-apidoc -o docs/ py_bugs_open_ai
-	$(MAKE) -C docs clean
-	$(MAKE) -C docs html
-	$(BROWSER) docs/_build/html/index.html
+	python scripts/generate_readme.py
 
-servedocs: docs ## compile the docs watching for changes
-	watchmedo shell-command -p '*.rst' -c '$(MAKE) -C docs html' -R -D .
 
 release: dist ## package and upload a release
 	twine upload dist/*
@@ -84,4 +76,8 @@ dist: clean ## builds source and wheel package
 	ls -l dist
 
 install: clean ## install the package to the active Python's site-packages
-	python setup.py install
+	pip install .
+
+develop: clean
+	pip install -e .
+	pip install -r requirements_dev.txt

@@ -5,54 +5,25 @@ import os
 import re
 from dataclasses import dataclass
 from fnmatch import fnmatch
-from functools import lru_cache
 from hashlib import md5
-from typing import Iterable, List, Optional, Any, Tuple, NamedTuple, TypeVar, Type, cast, MutableMapping, Callable
+from typing import Iterable, List, Optional, Any, Tuple, NamedTuple, TypeVar, Type, cast, Callable
 from uuid import uuid4, UUID
 import tiktoken
 import yaml
-from scipy import spatial
+from scipy import spatial  # type: ignore
 
-from py_bugs_open_ai.constants import DEFAULT_MODEL
+from py_bugs_open_ai.constants import DEFAULT_MODEL, DEFAULT_IS_BUG_RE, FIND_BUGS_SYSTEM_CONTENT
 from .models.base import CacheProtocol
 from .models.examples import ExamplesFile, Example
 from .models.open_ai import Message, Role
-from .open_ai_client import OpenAiClient, EmbeddingItem
+from .open_ai_client import OpenAiClient
 
 AstT = TypeVar('AstT', bound=ast.AST)
 
 
-def get_files(path: str = '.', include: str = '*.py', exclude: Optional[List[str]] = None) -> Iterable[str]:
-    if exclude is not None:
-        exclude_ = exclude
-    else:
-        exclude_ = []
-
-    def _is_excluded(name: str, is_dir: bool) -> bool:
-        for exclude_pattern in exclude_:
-            if is_dir and exclude_pattern.endswith('/'):
-                exclude_pattern = exclude_pattern[:-1]
-            if fnmatch(name, exclude_pattern):
-                return True
-        return False
-
-    if os.path.isfile(path):
-        if fnmatch(path, include) and not _is_excluded(path, is_dir=False):
-            yield path
-    else:
-        dir = path
-        dirs_to_search: List[str] = []
-        while True:
-            for dir_item in os.listdir(dir):
-                full_item = os.path.join(dir, dir_item)
-                if os.path.isdir(full_item) and not _is_excluded(dir_item, is_dir=True):
-                    dirs_to_search.append(full_item)
-                elif fnmatch(dir_item, include) and not _is_excluded(dir_item, is_dir=False):
-                    yield full_item
-            if dirs_to_search:
-                dir = dirs_to_search.pop()
-            else:
-                break
+def _cosine_wrapper(u: List[float], v: List[float]) -> float:
+    # wrapper to correctly type spatial.distance.cosine()
+    return spatial.distance.cosine(u, v)
 
 
 @dataclass
@@ -313,15 +284,10 @@ class FindBugsReturn(NamedTuple):
 
 
 class BugFinder:
-    FIND_BUGS_SYSTEM_CONTENT = \
-        'You are a python bug finder.  Given a snippet of python code, you respond "OK" if you detect no bugs in it' \
-        ' and"ERROR: " followed by the error description if you detect an error in it.  Don\'t report import errors' \
-        ' packages.'
-
     def __init__(self, open_ai_client: OpenAiClient, is_bug_re: re.Pattern | None = None,
                  system_content: str = FIND_BUGS_SYSTEM_CONTENT):
         self.open_ai_client = open_ai_client
-        self.is_bug_re = is_bug_re if is_bug_re is not None else re.compile(r'^ERROR\b')
+        self.is_bug_re = is_bug_re if is_bug_re is not None else re.compile(DEFAULT_IS_BUG_RE)
         self.system_content = system_content
 
     def get_query_messages(self, code: str) -> List[Message]:
@@ -339,22 +305,14 @@ class BugFinder:
 
 
 class QueryConstructor:
-    def __init__(self, open_ai_client: OpenAiClient, examples_file: str, max_tokens_to_send: int, system_content: str,
-                 model: str = DEFAULT_MODEL):
+    def __init__(self, open_ai_client: OpenAiClient, examples: List[Example], max_tokens_to_send: int,
+                 system_content: str = FIND_BUGS_SYSTEM_CONTENT, model: str = DEFAULT_MODEL):
         self.open_ai_client = open_ai_client
         self.max_tokens_to_send = max_tokens_to_send
         self.system_content = system_content
         self.model = model  # for getting token count
         self._token_count_cache: CacheProtocol[str, int] = {}
-        self._embeddings_by_text: CacheProtocol[str, List[float]] = {}
-
-        if os.path.exists(examples_file):
-            with open(examples_file, 'r') as f:
-                examples_obj = yaml.full_load(f)
-            examples_file = ExamplesFile.parse_obj(examples_obj)
-            self.examples = examples_file.examples
-        else:
-            self.examples: List[Example] = []
+        self.examples = examples
 
     def get_token_count(self, code: str, refresh_cache: bool = False) -> int:
         """Return the number of tokens in a string."""
@@ -385,6 +343,7 @@ class QueryConstructor:
         token_count = self._get_token_count_sum(starting_messages)
         for example in self.examples:
             token_count += self.get_token_count(example.code)
+            token_count += self.get_token_count(example.response)
             if token_count > self.max_tokens_to_send:
                 filter_examples = True
                 break
@@ -394,7 +353,7 @@ class QueryConstructor:
 
     def _add_examples_all(self, query: str) -> List[Message]:
         starting_messages = self._get_starting_messages(query)
-        return_messages = [starting_messages[0]]
+        return_messages = starting_messages[:-1]
         for example in self.examples:
             return_messages.append(Message(
                 role=Role.user,
@@ -402,8 +361,9 @@ class QueryConstructor:
             ))
             return_messages.append(Message(
                 role=Role.agent,
-                content=example.code
+                content=example.response
             ))
+        return_messages.append(starting_messages[-1])
         return return_messages
 
     @staticmethod
@@ -414,15 +374,14 @@ class QueryConstructor:
 
     def _add_examples_filtered(self, query: str) -> List[Message]:
         starting_messages = self._get_starting_messages(query)
-        if self._embeddings_by_text == {}:
-            texts_iter = itertools.chain((e.code for e in self.examples), starting_messages[-1].content)
-            embeddings = self.open_ai_client.get_embeddings(texts=texts_iter)
-            self._embeddings_by_text = {text: embeddings for text, embeddings in embeddings}
+        texts_iter = itertools.chain((e.code for e in self.examples), [query])
+        embeddings = self.open_ai_client.get_embeddings(texts=texts_iter)  # this should be cached
+        embeddings_by_text = {text: embeddings for text, embeddings in embeddings}
 
-        query_embeddings = self._embeddings_by_text[starting_messages[-1].content]
+        query_embeddings = embeddings_by_text[query]
 
-        def _rank(example: Example):
-            return 1 - spatial.distance.cosine(query_embeddings, self._embeddings_by_text[example.code])
+        def _rank(example_: Example):
+            return _cosine_wrapper(query_embeddings, embeddings_by_text[example_.code])
         sorted_examples = self._sorted(self.examples, key=_rank)
 
         return_messages = starting_messages

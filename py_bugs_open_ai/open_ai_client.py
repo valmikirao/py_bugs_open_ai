@@ -6,7 +6,7 @@ import openai
 from openai.error import RateLimitError
 from tenacity import retry, retry_if_exception, wait_exponential
 
-from py_bugs_open_ai.constants import DEFAULT_MODEL, EMBEDDINGS_REQUEST_CHUNK_SIZE, DEFAULT_EMBEDDING_MODEL
+from py_bugs_open_ai.constants import DEFAULT_MODEL, EMBEDDINGS_REQUEST_CHUNK_SIZE, DEFAULT_EMBEDDINGS_MODEL
 from py_bugs_open_ai.models.base import CacheProtocol
 from py_bugs_open_ai.models.open_ai import OpenAiResponse, Message, EmbeddingResponse
 
@@ -25,7 +25,7 @@ class EmbeddingItem(NamedTuple):
 class OpenAiClient:
     api_key: str
     model: str = DEFAULT_MODEL
-    embedding_model: str = DEFAULT_EMBEDDING_MODEL
+    embedding_model: str = DEFAULT_EMBEDDINGS_MODEL
     query_cache: CacheProtocol[str, str] = field(default_factory=lambda: {})
     embeddings_cache: CacheProtocol[str, List[float]] = field(default_factory=lambda: {})
 
