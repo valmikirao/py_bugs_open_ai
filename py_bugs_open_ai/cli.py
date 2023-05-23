@@ -314,7 +314,7 @@ def main(file: List[str], files_from_stdin: bool, api_key_env_variable: str, mod
         examples_file_ = examples_file
     else:
         examples_file_ = None
-        if examples_file_ != DEFAULT_EXAMPLES_FILE:
+        if examples_file != DEFAULT_EXAMPLES_FILE:
             click.echo(f"WARNING: Examples file {examples_file!r}", err=True)
 
     _main(
