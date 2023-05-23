@@ -1,18 +1,17 @@
 #!/usr/bin/env python
 
 """The setup script."""
+import os.path
 
 from setuptools import setup, find_packages
 
 from setup_constants import SHORT_DESCRIPTION, AUTHOR, AUTHOR_EMAIL, CLI_NAME
 
-# with open('README.rst') as readme_file:
-#     readme = readme_file.read()
-#
-# with open('HISTORY.rst') as history_file:
-#     history = history_file.read()
+base_dir, _ = os.path.split(__file__)
+readme_file = os.path.join(base_dir, 'README.md')
+with open(readme_file, 'r') as f:
+    readme = f.read()
 
-readme = 'TBD'
 
 requirements = [
     'Click>=8.1.3,<9.0.0',
