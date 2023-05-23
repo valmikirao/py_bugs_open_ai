@@ -5,7 +5,7 @@ import os.path
 
 from setuptools import setup, find_packages
 
-from setup_constants import SHORT_DESCRIPTION, AUTHOR, AUTHOR_EMAIL, CLI_NAME
+from setup_constants import SHORT_DESCRIPTION, AUTHOR, AUTHOR_EMAIL, CLI_NAME, VERSION
 
 base_dir, _ = os.path.split(__file__)
 readme_file = os.path.join(base_dir, 'README.md')
@@ -49,6 +49,7 @@ setup(
     install_requires=requirements,
     license="GNU General Public License v3",
     long_description=readme,
+    long_description_content_type='text/markdown',
     include_package_data=True,
     keywords='py_bugs_open_ai',
     name='py_bugs_open_ai',
@@ -56,6 +57,6 @@ setup(
     test_suite='tests',
     tests_require=test_requirements,
     url='https://github.com/valmikirao/py_bugs_open_ai',
-    version='0.1.0',
+    version=VERSION,
     zip_safe=False,
 )
