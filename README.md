@@ -6,7 +6,7 @@
 
 * Free software: GNU General Public License v3
 
-A utility to help use OpenAI to find bugs in large projects or git diffs in python code
+A utility to help use OpenAI to find bugs in large projects or git diffs in python code.  Makes heavy use of caching to save time/money
 
 # Table of Contents
 
@@ -197,12 +197,17 @@ examples:
 
 If the token count in the query plus the `--system-text` plus the chunk size are greater than `--max-tokens-to-send`,
 then the `` will use embeddings to figure out which of the examples are relevant to this particular chunk
-and just send those.  If you don't know what embeddings are, this might help explain it:
+and just send those.  Please note that standard billing applies to getting the embeddings.  The embedding results are
+cached
+
+If you don't know what embeddings are, this might help explain it:
 https://github.com/openai/openai-cookbook/blob/main/examples/Question_answering_using_embeddings.ipynb
 
 ## TODO <a id="TODO"/>
 
 * Allow this to use LLM's besides OpenAI
+* Add tooling to have some sort of remote cache, so if you run it locally then another contributor or the CI/CD can
+  take advantage of the same cache
 
 ## Credits <a id="Credits"/>
 
