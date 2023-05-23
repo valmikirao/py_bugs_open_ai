@@ -15,7 +15,8 @@ A utility to help use OpenAI to find bugs in large projects or git diffs in pyth
 3. [System Text](#SystemText)
 4. [Skipping False Positives](#Skipping)
 5. [Providing Examples](#Examples)
-6. [Credits](#Credits)
+6. [TODO](#TODO)
+7. [Credits](#Credits)
 
 
 ## Installation <a id="Installation"/>
@@ -198,6 +199,12 @@ If the token count in the query plus the `--system-text` plus the chunk size are
 then the `` will use embeddings to figure out which of the examples are relevant to this particular chunk
 and just send those.  If you don't know what embeddings are, this might help explain it:
 https://github.com/openai/openai-cookbook/blob/main/examples/Question_answering_using_embeddings.ipynb
+
+## TODO <a id="TODO"/>
+
+* Make this compatible for python 3.7+ (The "type | None" type-hints are convenient, but not worth it).  You can work
+   around this if the rest of your repo is < python3.10 (creating a virtualenvironment just for this tool)
+* Allow this to use LLM's besides OpenAI
 
 ## Credits <a id="Credits"/>
 

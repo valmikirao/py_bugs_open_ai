@@ -113,6 +113,12 @@ then the `{{CLI_NAME}}` will use embeddings to figure out which of the examples 
 and just send those.  If you don't know what embeddings are, this might help explain it:
 https://github.com/openai/openai-cookbook/blob/main/examples/Question_answering_using_embeddings.ipynb
 
+## TODO <a id="TODO"/>
+
+* Make this compatible for python 3.7+ (The "type | None" type-hints are convenient, but not worth it).  You can work
+   around this if the rest of your repo is < python3.10 (creating a virtualenvironment just for this tool)
+* Allow this to use LLM's besides OpenAI
+
 ## Credits <a id="Credits"/>
 
 Created by {{AUTHOR}} <{{AUTHOR_EMAIL}}>
