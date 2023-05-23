@@ -1,20 +1,17 @@
 """Main module."""
 import ast
 import itertools
-import os
 import re
 from dataclasses import dataclass
-from fnmatch import fnmatch
 from hashlib import md5
 from typing import Iterable, List, Optional, Any, Tuple, NamedTuple, TypeVar, Type, cast, Callable
 from uuid import uuid4, UUID
 import tiktoken
-import yaml
 from scipy import spatial  # type: ignore
 
 from py_bugs_open_ai.constants import DEFAULT_MODEL, DEFAULT_IS_BUG_RE, FIND_BUGS_SYSTEM_CONTENT
 from .models.base import CacheProtocol
-from .models.examples import ExamplesFile, Example
+from .models.examples import Example
 from .models.open_ai import Message, Role
 from .open_ai_client import OpenAiClient
 

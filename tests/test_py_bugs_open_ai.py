@@ -5,14 +5,13 @@ import itertools
 import os
 import re
 from random import Random
-from typing import List, Any, NamedTuple, Set, cast, Iterable, Optional
+from typing import List, Any, NamedTuple, Set, cast, Iterable
 from unittest.mock import create_autospec
 
 from conftest import ExampleWithEmbeds
-from py_bugs_open_ai.models.examples import ExamplesFile, Example
+from py_bugs_open_ai.models.examples import ExamplesFile
 from py_bugs_open_ai.models.open_ai import Message, Role
 from py_bugs_open_ai.open_ai_client import OpenAiClient, EmbeddingItem
-from .constants import BASE_DIR
 
 import pytest
 import tiktoken
@@ -21,7 +20,7 @@ from pydantic import BaseModel
 
 import ast
 from py_bugs_open_ai.constants import DEFAULT_MODEL
-from py_bugs_open_ai.py_bugs_open_ai import CodeChunker, CodeChunk, _cosine_wrapper, QueryConstructor
+from py_bugs_open_ai.py_bugs_open_ai import CodeChunker, CodeChunk, QueryConstructor
 
 
 @pytest.mark.parametrize("total_token_count,max_chunk_size,expected", [
@@ -56,7 +55,6 @@ class ExpectedChunk(BaseModel):
             return self.error == other.error and self.warning == other.warning
         else:
             return super().__eq__(other)
-
 
 
 class ChunkerParametrize(NamedTuple):

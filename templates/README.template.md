@@ -4,13 +4,15 @@
 ![python versions](https://img.shields.io/pypi/pyversions/py_bugs_open_ai)
 ![build](https://img.shields.io/github/actions/workflow/status/valmikirao/py_bugs_open_ai/push-workflow.yml?branch=master)
 
-{{SHORT_DESCRIPTION}}
-
-[TOC]
-
 * Free software: {{LICENSE}}
 
-## Installation
+{{SHORT_DESCRIPTION}}
+
+# Table of Contents
+
+{{TOC}}
+
+## Installation <a id="Installation"/>
 
 ```shell
 # in local virtual env
@@ -20,7 +22,7 @@ $ pip install py-bugs-open-ai
 $ pipx install py-bugs-open-ai
 ```
 
-## Usage
+## Usage <a id="Usage"/>
 
 ```shell
 # check for bugs in file
@@ -48,7 +50,16 @@ file specified by the `--config` option):
 {{CONFIG_FILE_HELP}}
 ```
 
-## Skipping False Positives
+## System Text <a id="SystemText"/>
+
+The `--system-text` argument, `system_text` config variable tells OpenAI what function it should be fulfilling.  Since
+the default value was too long to include in the `--help` message, here it is:
+
+```text
+{{FIND_BUGS_SYSTEM_CONTENT}}
+```
+
+## Skipping False Positives <a id="Skipping"/>
 
 Sometimes, openai is smart enough to interpret comments added to the code
 
@@ -74,14 +85,35 @@ So if you wanted to skip the two above errors, you could do the following:
 skip_chunks = 3156754fe4,91b78bdac4
 ```
 
-## TODO
+## Providing Examples <a id="Examples"/>
 
-* Allow user to supply examples of bugs and non-bugs
-* Be able to give a lot of examples and use embeddings to only include the relevant ones in the request
-* More unit tests.  Moooorrrreeee!!!
+You can provide examples of potential bugs in a file.  By default, the cli looks for this file at
+`{{DEFAULT_EXAMPLES_FILE}}`, but it can also be specified with the `--examples-files` argument.  The file is a Yaml
+file with the following format:
 
+```yaml
+examples:
+  - code: <some code>
+    response: <what you wound want OpenAI to respond with for this type of code>
+  - <more examples>
+```
 
-## Credits
+So, for example:
+
+```yaml
+examples:
+  - code: os.path.join('dir', 'file')
+    response: "OK: Assume that the \"os\" module was imported above"
+  - code: my_companys_module.my_companys_function(-1)
+    response: "ERROR: my_companys_module.my_companys_function() errors with negative values"
+```
+
+If the token count in the query plus the `--system-text` plus the chunk size are greater than `--max-tokens-to-send`,
+then the `{{CLI_NAME}}` will use embeddings to figure out which of the examples are relevant to this particular chunk
+and just send those.  If you don't know what embeddings are, this might help explain it:
+https://github.com/openai/openai-cookbook/blob/main/examples/Question_answering_using_embeddings.ipynb
+
+## Credits <a id="Credits"/>
 
 Created by {{AUTHOR}} <{{AUTHOR_EMAIL}}>
 

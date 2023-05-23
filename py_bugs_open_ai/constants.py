@@ -14,7 +14,7 @@ DEFAULT_IS_BUG_RE: Final[str] = r'^ERROR\b'
 DEFAULT_MAX_TOKENS_TO_SEND: Final[int] = 1000
 FIND_BUGS_SYSTEM_CONTENT = \
     'You are a python bug finder.  Given a snippet of python code, you respond "OK" if you detect no bugs in it' \
-    ' and"ERROR: " followed by the error description if you detect an error in it.  Don\'t report import errors' \
+    ' and "ERROR: " followed by the error description if you detect an error in it.  Don\'t report import errors' \
     ' packages.'
 ERROR_OUT: Final[str] = '\033[91merror\033[0m'  # red "error"
 WARN_OUT: Final[str] = '\033[93mwarning\033[0m'  # yellow "warning"

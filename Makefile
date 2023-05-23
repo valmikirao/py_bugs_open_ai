@@ -1,4 +1,4 @@
-.PHONY: clean clean-pyc clean-test dist help install lint
+.PHONY: clean clean-pyc clean-test dist help install lint develop
 .DEFAULT_GOAL := help
 
 define BROWSER_PYSCRIPT

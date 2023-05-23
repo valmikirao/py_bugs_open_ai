@@ -4,8 +4,7 @@ import os
 import re
 import sys
 from configparser import ConfigParser
-from typing import List, Callable, Set, Iterator, Tuple, MutableMapping, Optional, Dict, Iterable, cast, TypeVar, Type, \
-    Generic
+from typing import List, Callable, Set, Iterator, Tuple, MutableMapping, Optional, Dict, Iterable, cast, TypeVar
 
 import click
 import yaml
@@ -185,7 +184,7 @@ def _main(abs_max_chunk_size: int, api_key: str, cache_dir: str, die_after: int,
             if diff_from_stdin:
                 skip_because_not_in_diff = should_skip_because_not_in_diff(
                     code_chunk=code_chunk,
-                    line_diffs = line_diffs_by_file[file_]
+                    line_diffs=line_diffs_by_file[file_]
                 )
             else:
                 skip_because_not_in_diff = False
@@ -241,7 +240,6 @@ def _file_for_help(file: str) -> str:
         return re.sub(pattern, '~', file)
     else:
         return file
-
 
 
 @click.command()
