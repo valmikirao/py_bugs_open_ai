@@ -1,4 +1,4 @@
-from py_bugs_open_ai.constants import VERSION
+from setup_constants import VERSION
 
 
 def main():
