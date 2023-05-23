@@ -40,7 +40,7 @@ def _embeddings_cache_wrapper(directory: str) -> CacheProtocol[str, List[float]]
     return cast(CacheProtocol[str, List[float]], DiskCache(directory))
 
 
-def _handle_config(ctx: click.Context, param: click.Option, filename: str | None) -> str | None:
+def _handle_config(ctx: click.Context, param: click.Option, filename: Optional[str]) -> Optional[str]:
     cfg = ConfigParser()
     if filename is not None:
         cfg.read(filename)
@@ -299,7 +299,7 @@ def main(file: List[str], files_from_stdin: bool, api_key_env_variable: str, mod
     if is_bug_re_ignore_case:
         is_bug_re_flags = re.IGNORECASE
     else:
-        is_bug_re_flags = re.NOFLAG
+        is_bug_re_flags = cast(re.RegexFlag, 0)
     is_bug_re_ = re.compile(is_bug_re, flags=is_bug_re_flags)
 
     abs_max_chunk_size_ = abs_max_chunk_size if abs_max_chunk_size is not None else max_chunk_size
@@ -315,7 +315,7 @@ def main(file: List[str], files_from_stdin: bool, api_key_env_variable: str, mod
     else:
         examples_file_ = None
         if examples_file_ != DEFAULT_EXAMPLES_FILE:
-            click.echo(f"WARNING: Examples file {examples_file_}", err=True)
+            click.echo(f"WARNING: Examples file {examples_file!r}", err=True)
 
     _main(
         abs_max_chunk_size=abs_max_chunk_size_,

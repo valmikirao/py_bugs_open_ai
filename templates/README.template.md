@@ -115,8 +115,6 @@ https://github.com/openai/openai-cookbook/blob/main/examples/Question_answering_
 
 ## TODO <a id="TODO"/>
 
-* Make this compatible for python 3.7+ (The "type | None" type-hints are convenient, but not worth it).  You can work
-   around this if the rest of your repo is < python3.10 (creating a virtualenvironment just for this tool)
 * Allow this to use LLM's besides OpenAI
 
 ## Credits <a id="Credits"/>

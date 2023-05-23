@@ -33,8 +33,8 @@ class CodeChunk:
     code: str
     peer_group: UUID
     token_count: int
-    error: str | None = None
-    warning: str | None = None
+    error: Optional[str] = None
+    warning: Optional[str] = None
 
     def get_hash(self):
         return md5(self.code.encode()).hexdigest()[:10]
@@ -94,7 +94,7 @@ class CodeChunker(ast.NodeVisitor):
                 total_token_count=total_token_count,
                 max_chunk_size=self.max_chunk_size
             )
-            last_chunk: CodeChunk | None = None
+            last_chunk: Optional[CodeChunk] = None
             for chunk in peer_group:
                 if last_chunk is not None:
                     concat_chunk = self.combine_from_to_chunks(last_chunk, chunk)
@@ -151,7 +151,7 @@ class CodeChunker(ast.NodeVisitor):
             return None
 
     def make_code_chunk(self, lineno: int, end_lineno: int, col_offset: int, end_col_offset: int,
-                        token_count: Optional[int] = None, peer_group: UUID | None = None) -> CodeChunk:
+                        token_count: Optional[int] = None, peer_group: Optional[UUID] = None) -> CodeChunk:
         lines = self._code_lines[lineno - 1:end_lineno]
         if indent_match := re.search(r'^\s+', lines[0]):
             indent_len = len(indent_match.group(0))
@@ -194,7 +194,7 @@ class CodeChunker(ast.NodeVisitor):
             elif isinstance(value, of_type):
                 yield value
 
-    def _get_stmt_header(self, node: ast.stmt) -> Tuple[CodeChunk | None, List[ast.stmt]]:
+    def _get_stmt_header(self, node: ast.stmt) -> Tuple[Optional[CodeChunk], List[ast.stmt]]:
         lineno = node.lineno
         col_offset = node.col_offset
         sub_stmts = cast(List[ast.stmt], list(self._get_children(node, of_type=ast.stmt)))
@@ -220,7 +220,7 @@ class CodeChunker(ast.NodeVisitor):
         in a more functional manner.  TODO
         """
         chunk = self.chunk_from_node(node)
-        new_peer_group: UUID | None
+        new_peer_group: Optional[UUID]
         children_to_visit: List[ast.AST]
         if chunk is not None and chunk.token_count <= self.max_chunk_size:
             if self._chunks_by_peer_group \
@@ -281,7 +281,7 @@ class FindBugsReturn(NamedTuple):
 
 
 class BugFinder:
-    def __init__(self, open_ai_client: OpenAiClient, is_bug_re: re.Pattern | None = None,
+    def __init__(self, open_ai_client: OpenAiClient, is_bug_re: Optional[re.Pattern] = None,
                  system_content: str = FIND_BUGS_SYSTEM_CONTENT):
         self.open_ai_client = open_ai_client
         self.is_bug_re = is_bug_re if is_bug_re is not None else re.compile(DEFAULT_IS_BUG_RE)

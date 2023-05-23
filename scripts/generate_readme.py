@@ -27,12 +27,6 @@ def get_config_file_help() -> str:
     return config_file_help
 
 
-def main():
-    rendered = render_readme()
-    with open(os.path.join(ROOT_DIR, 'README.md'), 'w') as f:
-        f.write(rendered)
-
-
 # normally, I would say using an re to parse html or md is evil, but this is such a limited case and I don't
 # want to install a whole html parser just for this
 ANCHOR_RE = re.compile(r'\b *<a\b +id="(\w+)"/>')
@@ -74,6 +68,13 @@ def render_readme():
     template_1 = Template(rendered_0)
     rendered_1 = template_1.render(TOC=toc)
     return rendered_1
+
+
+def main():
+    rendered = render_readme()
+    readme = os.path.join(ROOT_DIR, 'README.md')
+    with open(readme, 'w') as f:
+        f.write(rendered)
 
 
 if __name__ == '__main__':

@@ -5,7 +5,7 @@ import itertools
 import os
 import re
 from random import Random
-from typing import List, Any, NamedTuple, Set, cast, Iterable
+from typing import List, Any, NamedTuple, Set, cast, Iterable, Optional
 from unittest.mock import create_autospec
 
 from conftest import ExampleWithEmbeds
@@ -39,10 +39,10 @@ def test_get_goal_min_size(total_token_count, max_chunk_size, expected):
 
 
 class ExpectedChunk(BaseModel):
-    code: str | None = None
-    token_count: int | None = None
-    error: str | None = None
-    warning: str | None = None
+    code: Optional[str] = None
+    token_count: Optional[int] = None
+    error: Optional[str] = None
+    warning: Optional[str] = None
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, CodeChunk):
