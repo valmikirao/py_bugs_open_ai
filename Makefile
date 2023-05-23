@@ -48,8 +48,8 @@ clean-test: ## remove test and coverage artifacts
 	rm -fr .pytest_cache
 
 lint: ## check style with flake8
-	flake8 py_bugs_open_ai tests
-	mypy setup.py py_bugs_open_ai tests
+	flake8 .
+	mypy .
 
 test: ## run tests quickly with the default Python
 	pytest

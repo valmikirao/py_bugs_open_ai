@@ -13,6 +13,7 @@ def get_config_file_help() -> str:
     config_file_help = ''
 
     def _format_param_prefix(param_: click.Parameter) -> str:
+        assert param_.name
         param_prefix = param_.name
         if isinstance(param_, click.Option) and param_.is_flag:
             param_prefix += ' (true or false)'
@@ -56,7 +57,6 @@ def render_toc(md_str: str) -> str:
                                      f" form '<a id=\"AnchorId\"/>'")
 
     return toc
-
 
 
 def render_readme():

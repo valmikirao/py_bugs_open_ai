@@ -25,6 +25,7 @@ def test_get_lines_diffs_by_file(base_dir: str):
         subprocess.check_call(['git', 'commit', '-m', 'TESTING'])
         _cp_from(diff_resources_dir)
         diff = subprocess.Popen(['git', 'diff'], stdout=subprocess.PIPE)
+        assert diff.stdout
         actual = dict(get_lines_diffs_by_file(line.decode() for line in diff.stdout))
 
         try:

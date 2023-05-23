@@ -3,6 +3,7 @@ import itertools
 import os
 import re
 import sys
+from collections import OrderedDict
 from configparser import ConfigParser
 from typing import List, Callable, Set, Iterator, Tuple, MutableMapping, Optional, Dict, Iterable, cast, TypeVar
 
@@ -154,20 +155,21 @@ def _main(abs_max_chunk_size: int, api_key: str, cache_dir: str, die_after: int,
         file_list = sorted(line_diffs_by_file.keys())
     else:
         file_list = file
-    chunks_by_file: Dict[str, List[CodeChunk]] = {}
+    chunks_by_file: Dict[str, List[CodeChunk]] = OrderedDict()
 
     for file_ in file_list:
-        with open(file_, 'r') as f:
-            code = f.read()
+        if os.path.exists(file_):
+            with open(file_, 'r') as f:
+                code = f.read()
 
-        chunks_by_file[file_] = list(CodeChunker(
-            code,
-            file=file_,
-            max_chunk_size=max_chunk_size,
-            model=model,
-            abs_max_chunk_size=abs_max_chunk_size,
-            strict_chunk_size=strict_chunk_size
-        ).get_chunks())
+            chunks_by_file[file_] = list(CodeChunker(
+                code,
+                file=file_,
+                max_chunk_size=max_chunk_size,
+                model=model,
+                abs_max_chunk_size=abs_max_chunk_size,
+                strict_chunk_size=strict_chunk_size
+            ).get_chunks())
     # prime the embeddings cache if needed
     if query_constructor is not None:
         all_chunks = itertools.chain(*chunks_by_file.values())
@@ -176,8 +178,7 @@ def _main(abs_max_chunk_size: int, api_key: str, cache_dir: str, die_after: int,
             open_ai_client=open_ai_client,
             query_constructor=query_constructor
         )
-    for file_ in file_list:
-        code_chunks = chunks_by_file[file_]
+    for file_, code_chunks in chunks_by_file.items():
         for code_chunk in code_chunks:
             click.echo(f"{_chunk_header(code_chunk)} - ", nl=False)
 
