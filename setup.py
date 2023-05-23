@@ -49,6 +49,7 @@ setup(
     install_requires=requirements,
     license="GNU General Public License v3",
     long_description=readme,
+    long_description_content_type='text/markdown',
     include_package_data=True,
     keywords='py_bugs_open_ai',
     name='py_bugs_open_ai',
