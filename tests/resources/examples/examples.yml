@@ -1,0 +1,25 @@
+examples:
+  - code: print(x)
+    response: "ERROR: NameError: name 'x' is not defined"
+
+  - code: |
+      a = "hello"
+      b = 42
+      print(a + b)
+    response: "ERROR: TypeError: can only concatenate str (not \"int\") to str"
+
+  - code: |
+      my_list = [1, 2, 3]
+      print(my_list[3])
+    response: "ERROR: list index out of range"
+
+  - code: |
+      my_dict = {"another_key": "another_value"}
+      print(my_dict["my_key"])
+    response: "KeyError: 'my_key'"
+
+  - code: |
+      x = 5
+      y = 0
+      print(x / y)
+    response: "ZeroDivisionError: division by zero"

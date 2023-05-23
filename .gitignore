@@ -110,3 +110,4 @@ ENV/
 
 # Local dev
 tmp/
+.pybugsai

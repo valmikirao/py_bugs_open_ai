@@ -24,3 +24,11 @@ class Choice(MyBaseModel):
 
 class OpenAiResponse(MyBaseModel):
     choices: List[Choice]
+
+
+class Embedding(MyBaseModel):
+    embedding: List[float]
+
+
+class EmbeddingResponse(MyBaseModel):
+    data: List[Embedding]
