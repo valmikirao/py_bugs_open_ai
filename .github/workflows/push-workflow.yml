@@ -47,6 +47,7 @@ jobs:
         if: ${{ matrix.python == '3.11' }}
         run: |
           # Using `hashFiles('**/*.py')` works but is insanely slow.  This does essentially the same
+          mkdir -p tmp
           git ls-files '*.py' | xargs md5sum > tmp/checksum-file.txt
       - name: Use PyBugsAI Cache
         if: ${{ matrix.python == '3.11' }}
