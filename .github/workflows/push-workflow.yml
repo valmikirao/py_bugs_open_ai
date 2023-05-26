@@ -11,7 +11,12 @@ jobs:
         python: ["3.9", "3.10", "3.11"]
 
     steps:
-      - uses: actions/checkout@v3
+      - if: ${{ matrix.python == '3.11' }}  # This run needs full depth to get git diff for pybugsai run
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # 0 means full depth
+      - if: ${{ matrix.python != '3.11' }}  # no full depth for non-3.11 runs
+        uses: actions/checkout@v3
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
@@ -38,6 +43,11 @@ jobs:
         run: |
           . ./scripts/venv_github.sh
           ./scripts/tox_github.sh "${{ matrix.python }}"
+      - name: Create PyBugsAI Cache Key File
+        if: ${{ matrix.python == '3.11' }}
+        run: |
+          # Using `hashFiles('**/*.py')` works but is insanely slow.  This does essentially the same
+          git ls-files '*.py' | xargs md5sum > tmp/checksum-file.txt
       - name: Use PyBugsAI Cache
         if: ${{ matrix.python == '3.11' }}
         uses: actions/cache@v3
@@ -45,15 +55,18 @@ jobs:
           path: |
             .pybugsai
           key:
-            pybugsai-${{ hashFiles('**/*.py') }}
+            pybugsai-${{ hashFiles('tmp/checksum-file.txt') }}
           restore-keys: |
-            pybugsai-${{ hashFiles('**/*.py') }}
+            pybugsai-${{ hashFiles('tmp/checksum-file.txt') }}
             pybugsai-
       - name: Run PyBugsAI
         if: ${{ matrix.python == '3.11' }}
         run: |
           . ./scripts/venv_github.sh
           ./scripts/pybugsai_github.sh
+        env:
+          OPEN_AI_API_KEY: ${{ secrets.OPEN_AI_API_KEY }}
+
   results:
       if: ${{ always() }}
       runs-on: ubuntu-latest
