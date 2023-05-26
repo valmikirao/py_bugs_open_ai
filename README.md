@@ -5,6 +5,8 @@
 ![build](https://img.shields.io/github/actions/workflow/status/valmikirao/py_bugs_open_ai/push-workflow.yml?branch=master)
 
 * Free software: GNU General Public License v3
+* Note for Python 3.8 and MacOS: I can't get this to work on my local machine with this combination, but it seems to
+ work in ubuntu, so I'm keeping this as working for Python 3.8
 
 A utility to help use OpenAI to find bugs in large projects or git diffs in python code.  Makes heavy use of caching to save time/money
 
