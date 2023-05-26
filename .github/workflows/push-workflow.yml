@@ -30,8 +30,8 @@ jobs:
             .mypy_cache
           key: python-${{ matrix.python }}-${{ hashFiles('setup.py', 'requirements_*.txt') }}
           restore-keys: |
-            test-${{ matrix.python }}-${{ hashFiles('setup.py', 'requirements_*.txt') }}
-            test-${{ matrix.python }}-
+            python-${{ matrix.python }}-${{ hashFiles('setup.py', 'requirements_*.txt') }}
+            python-${{ matrix.python }}-
       - name: Install Dev Environment
         run: |
           . ./scripts/venv_github.sh
