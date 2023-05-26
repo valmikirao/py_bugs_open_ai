@@ -1,6 +1,4 @@
-import importlib
 import os
-import sys
 from typing import Final
 
 DEFAULT_MODEL: Final[str] = 'gpt-3.5-turbo'
@@ -23,6 +21,13 @@ SKIP_OUT: Final[str] = '\033[93mskip\033[0m'  # yellow "skip"
 NOT_IN_DIFF_OUT: Final[str] = '\033[93mnot in diff\033[0m'  # yellow "skip"
 EMBEDDINGS_REQUEST_CHUNK_SIZE: Final[int] = 1000
 DEFAULT_EMBEDDINGS_MODEL = 'text-embedding-ada-002'
+SHORT_DESCRIPTION: Final[str] = 'A utility to help use OpenAI to find bugs in large projects or git diffs in python' \
+                                ' code.  Makes heavy use of caching to save time/money'
+LICENSE: Final[str] = 'GNU General Public License v3'
+CLI_NAME: Final[str] = 'pybugsai'
+VERSION: Final[str] = '0.1.2'
+AUTHOR: Final[str] = 'Valmiki Rao'
+AUTHOR_EMAIL: Final[str] = 'valmikirao@gmail.com'
 
 
 def get_root_dir() -> str:
@@ -33,22 +38,3 @@ def get_root_dir() -> str:
 
 
 ROOT_DIR: Final[str] = get_root_dir()
-
-
-def get_setup_constants_module():
-    setup_constants_path = os.path.join(ROOT_DIR, 'setup_constants.py')
-    spec = importlib.util.spec_from_file_location("setup_constants", setup_constants_path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["setup_constants"] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-setup_constants = get_setup_constants_module()
-
-SHORT_DESCRIPTION: Final[str] = setup_constants.SHORT_DESCRIPTION
-LICENSE: Final[str] = setup_constants.LICENSE
-CLI_NAME: Final[str] = setup_constants.CLI_NAME
-VERSION: Final[str] = setup_constants.VERSION
-AUTHOR: Final[str] = setup_constants.AUTHOR
-AUTHOR_EMAIL: Final[str] = setup_constants.AUTHOR_EMAIL

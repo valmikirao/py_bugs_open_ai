@@ -3,12 +3,12 @@ run-name: ${{ github.actor }} pushed a change 🚀
 on: [push]
 
 jobs:
-  tox:
+  test:
 
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python: ["3.8", "3.9", "3.10", "3.11"]
+        python: ["3.9", "3.10", "3.11"]
 
     steps:
       - uses: actions/checkout@v3
@@ -16,53 +16,49 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python }}
-      - name: Install tox and any other packages
-        run: pip install -r requirements_tox.txt
-      - name: Use Tox Cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            .tox
-            .mypy_cache
-          key: tox-${{ matrix.python }}-${{ hashFiles('setup.py', 'requirements_test.txt', 'requirements_docs.txt') }}
-          restore-keys: |
-              tox-${{ matrix.python }}-${{ hashFiles('setup.py', 'requirements_test.txt', 'requirements_docs.txt') }}
-              tox-${{ matrix.python }}-
-      - name: Run Tox
-        # Run tox using the version of Python in `PATH`
-        run: ./scripts/tox_github.sh "${{ matrix.python }}"
-
-  pybugsai:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0  # 0 means full depth
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-      - name: Use Python Bugs Ai cache
+      - name: Use Python Cache
         uses: actions/cache@v3
         with:
           path: |
             .venv
-            .pybugsai/cache
-          key: pybugsai-${{ hashFiles('setup.py', 'scripts/pybugsai_github.sh') }}-${{ hashFiles('**/*.py') }}
+            .tox
+            .mypy_cache
+          key: python-${{ matrix.python }}-${{ hashFiles('setup.py', 'requirements_*.txt') }}
           restore-keys: |
-            pybugsai-${{ hashFiles('setup.py', 'scripts/pybugsai_github.sh') }}-${{ hashFiles('**/*.py') }}
-            pybugsai-${{ hashFiles('setup.py', 'scripts/pybugsai_github.sh') }}-
+            test-${{ matrix.python }}-${{ hashFiles('setup.py', 'requirements_*.txt') }}
+            test-${{ matrix.python }}-
+      - name: Install Dev Environment
+        run: |
+          . ./scripts/venv_github.sh
+          # it's not necessary to install the whole dev-environment to run tox.  However, this is a good check
+          # that the dev-setup works in all python versions
+          ./scripts/setup_dev_env.sh
+      - name: Run Tox
+        # Run tox using the version of Python in `PATH`
+        run: |
+          . ./scripts/venv_github.sh
+          ./scripts/tox_github.sh "${{ matrix.python }}"
+      - name: Use PyBugsAI Cache
+        if: ${{ matrix.python == '3.11' }}
+        uses: actions/cache@v3
+        with:
+          path: |
+            .pybugsai
+          key:
+            pybugsai-${{ hashFiles('**/*.py') }}
+          restore-keys: |
+            pybugsai-${{ hashFiles('**/*.py') }}
             pybugsai-
-      - name: Run pybugsai
-        run: ./scripts/pybugsai_github.sh
-        env:
-          OPEN_AI_API_KEY: ${{ secrets.OPEN_AI_API_KEY }}
-
+      - name: Run PyBugsAI
+        if: ${{ matrix.python == '3.11' }}
+        run: |
+          . ./scripts/venv_github.sh
+          ./scripts/pybugsai_github.sh
   results:
       if: ${{ always() }}
       runs-on: ubuntu-latest
       name: Final Results
-      needs: [tox, pybugsai]
+      needs: [test]
       steps:
           - run: |
               [[ "${{ needs.tox.result }}" == "success" ]] && [[ "${{ needs.pybugsai.result }}" == "success" ]]
