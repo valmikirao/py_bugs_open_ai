@@ -149,7 +149,7 @@ def _main(abs_max_chunk_size: int, api_key: str, cache_dir: str, die_after: int,
     file_list: List[str]
     line_diffs_by_file: MutableMapping[str, Set[int]] = {}
     if files_from_stdin:
-        file_list = [line.strip('\n') for line in sys.stdin.read()]
+        file_list = [line.strip('\n') for line in sys.stdin]
     elif diff_from_stdin:
         line_diffs_by_file = get_lines_diffs_by_file(sys.stdin)
         file_list = sorted(line_diffs_by_file.keys())
