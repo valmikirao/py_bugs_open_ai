@@ -75,4 +75,4 @@ jobs:
       needs: [test]
       steps:
           - run: |
-              [[ "${{ needs.tox.result }}" == "success" ]] && [[ "${{ needs.pybugsai.result }}" == "success" ]]
+              [[ "${{ needs.test.result }}" == "success" ]]
