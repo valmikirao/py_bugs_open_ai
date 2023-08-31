@@ -4,16 +4,18 @@ import itertools
 import re
 from dataclasses import dataclass
 from hashlib import md5
-from typing import Iterable, List, Optional, Any, Tuple, NamedTuple, TypeVar, Type, cast, Callable
+from typing import Iterable, List, Optional, Any, Tuple, NamedTuple, TypeVar, Type, cast, Callable, Dict
 from uuid import uuid4, UUID
 import tiktoken
 from scipy import spatial  # type: ignore
 
-from py_bugs_open_ai.constants import DEFAULT_MODEL, DEFAULT_IS_BUG_RE, FIND_BUGS_SYSTEM_CONTENT
+from .constants import DEFAULT_MODEL, DEFAULT_IS_BUG_RE, FIND_BUGS_SYSTEM_CONTENT
 from .models.base import CacheProtocol
 from .models.examples import Example
 from .models.open_ai import Message, Role
 from .open_ai_client import OpenAiClient
+
+CHUNK_PARSE_MESSAGE = 'Unable to parse chunk'
 
 AstT = TypeVar('AstT', bound=ast.AST)
 
@@ -47,6 +49,17 @@ class CodeChunk:
             self.warning = f"{prefix}: {message}"
         return self
 
+    def check_is_valid(self) -> bool:
+        """
+        True if the code represented by this chunk is valid python code
+        """
+        try:
+            ast.parse(self.code)
+        except SyntaxError:
+            return False
+        else:
+            return True
+
 
 T = TypeVar('T')
 
@@ -58,6 +71,14 @@ def coalesce(*args: Optional[T]) -> T:
     raise TypeError('At least one argument needs to not be None')
 
 
+def assert_strict(is_true: bool, message: str = 'ERROR') -> None:
+    """
+    Assert that fails regardless of whether production key is set
+    """
+    if not is_true:
+        raise AssertionError(message)
+
+
 class CodeChunker(ast.NodeVisitor):
     def __init__(self, code: str, file: str, max_chunk_size: int, model: str = DEFAULT_MODEL,
                  abs_max_chunk_size: int = -1, strict_chunk_size: bool = False):
@@ -65,10 +86,13 @@ class CodeChunker(ast.NodeVisitor):
         self.max_chunk_size = max_chunk_size
         self.strict_chunk_size = strict_chunk_size
         self.file = file
+
         if abs_max_chunk_size < 0:
             self.abs_max_chunk_size = self.max_chunk_size
         else:
             self.abs_max_chunk_size = abs_max_chunk_size
+        assert_strict(self.abs_max_chunk_size >= self.max_chunk_size)
+
         self._chunks_by_peer_group: List[List[CodeChunk]] = []
         self._current_peer_group = uuid4()
         self._code_lines = code.split('\n')
@@ -102,26 +126,34 @@ class CodeChunker(ast.NodeVisitor):
                     concat_chunk = chunk
 
                 if concat_chunk.token_count >= goal_min_size:
-                    if concat_chunk.token_count <= self.max_chunk_size:
+                    if concat_chunk.token_count <= self.max_chunk_size and concat_chunk.check_is_valid():
                         yield concat_chunk
                         last_chunk = None
-                    elif last_chunk:
+                    elif last_chunk is not None and last_chunk.check_is_valid():
                         assert last_chunk.token_count <= self.abs_max_chunk_size
                         yield last_chunk
                         last_chunk = chunk
+                    elif concat_chunk.token_count > self.abs_max_chunk_size:
+                        concat_chunk = concat_chunk.set_exception(
+                            self._get_chunk_size_exception_message(concat_chunk), error=self.strict_chunk_size
+                        )
+                        yield concat_chunk
+                        last_chunk = None
                     else:
-                        assert concat_chunk is chunk, 'These should be the same in this case'
-                        if chunk.token_count <= self.abs_max_chunk_size:
-                            yield chunk
-                        else:
-                            chunk = chunk.set_exception(
-                                self._get_chunk_size_exception_message(chunk), error=self.strict_chunk_size
-                            )
-                            yield chunk
+                        last_chunk = concat_chunk
                 else:
                     last_chunk = concat_chunk
 
             if last_chunk is not None:
+                if not last_chunk.check_is_valid():
+                    last_chunk = last_chunk.set_exception(
+                        CHUNK_PARSE_MESSAGE, error=self.strict_chunk_size
+                    )
+                elif last_chunk.token_count > self.abs_max_chunk_size:
+                    last_chunk = last_chunk.set_exception(
+                        self._get_chunk_size_exception_message(last_chunk), error=self.strict_chunk_size
+                    )
+
                 yield last_chunk
 
     @staticmethod

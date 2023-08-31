@@ -19,8 +19,8 @@ import tiktoken
 from pydantic import BaseModel
 
 import ast
-from py_bugs_open_ai.constants import DEFAULT_MODEL
-from py_bugs_open_ai.py_bugs_open_ai import CodeChunker, CodeChunk, QueryConstructor
+from py_bugs_open_ai.constants import DEFAULT_MODEL, DEFAULT_MAX_TOKENS_TO_SEND, DEFAULT_MAX_CHUNK_SIZE
+from py_bugs_open_ai.py_bugs_open_ai import CodeChunker, CodeChunk, QueryConstructor, CHUNK_PARSE_MESSAGE
 
 
 @pytest.mark.parametrize("total_token_count,max_chunk_size,expected", [
@@ -106,8 +106,10 @@ def test_chunker(file: str, max_chunk_size: int, abs_max_chunk_size: int, strict
         assert [c.token_count for c in chunks] == expected_token_counts
     except AssertionError:
         for chunk, expected_token_count in itertools.zip_longest(chunks, expected_token_counts):
-            print(f'------ actual token count: {chunk.token_count}; expected token count {expected_token_count} ------')
-            print(chunk.code)
+            token_count = chunk.token_count if chunk else None
+            print(f'------ actual token count: {token_count}; expected token count {expected_token_count} ------')
+            if chunk:
+                print(chunk.code)
         raise
     assert set(i for i, c in enumerate(chunks) if c.error is not None) == expected_errors_i
     assert set(i for i, c in enumerate(chunks) if c.warning is not None) == expected_warnings_i
@@ -235,3 +237,84 @@ def test_add_all_examples_to_query(examples_added_query: List[Message], system_c
     )
 
     assert examples_added_query == expected_query
+
+
+SNIPPET_FILENAME_PARAMS = [
+    '002db0f84128233e76024757725b7af64dfa95af08d2195ffdc74a564b3fce9e_after_merge-normalized.py',
+    '0090562c6483883dc4db96053d8674aa47a7d2fb513c7ec573582356f6fc5fee_after_merge-normalized.py'
+]
+
+
+@pytest.fixture(params=SNIPPET_FILENAME_PARAMS)
+def snippet_filename(request: Any, base_dir: str) -> str:
+    return os.path.join(base_dir, 'tests', 'resources', 'snippets', request.param)
+
+
+CHUNK_SIZE_PARAMS = [
+    DEFAULT_MAX_CHUNK_SIZE,
+    DEFAULT_MAX_CHUNK_SIZE // 2,
+    DEFAULT_MAX_CHUNK_SIZE // 4,
+    DEFAULT_MAX_CHUNK_SIZE * 2
+]
+
+
+@pytest.fixture(params=CHUNK_SIZE_PARAMS)
+def max_chunk_size_snippets(request: Any) -> int:
+    return request.param
+
+
+@pytest.fixture(params=CHUNK_SIZE_PARAMS)
+def abs_max_chunk_size_snippets(request: Any) -> int:
+    return request.param
+
+@pytest.fixture
+def chunk_parse_warning() -> str:
+    return f"WARNING: {CHUNK_PARSE_MESSAGE}"
+
+
+def test_chunker_against_snippets(base_dir: str, snippet_filename: str, max_chunk_size_snippets: int,
+                                  abs_max_chunk_size_snippets: int, chunk_parse_warning: str):
+    """
+    Test the chunker against snippets from pytracebugs that gave us trouble
+    https://github.com/acheshkov/pytracebugs
+    """
+    full_path = os.path.join(base_dir, snippet_filename)
+    with open(full_path, 'r') as f:
+        code = f.read()
+
+    try:
+        chunker = CodeChunker(
+            code=code,
+            file=full_path,
+            max_chunk_size=max_chunk_size_snippets,
+            abs_max_chunk_size=abs_max_chunk_size_snippets,
+            strict_chunk_size=False
+        )
+    except AssertionError:
+        assert abs_max_chunk_size_snippets < max_chunk_size_snippets, \
+            'This should have succeeded otherwise'
+    else:
+        assert abs_max_chunk_size_snippets >= max_chunk_size_snippets, \
+            'If creating the chunker succeeded, this should be true'
+
+        chunks = chunker.get_chunks()
+        for i, chunk in enumerate(chunks):
+            try:
+                ast.parse(chunk.code)
+            except SyntaxError:
+                syntax_error = True
+            else:
+                syntax_error = False
+
+            if syntax_error:
+                assert chunk.warning is not None, f"Error for chunk {chunk}"
+            else:
+                assert chunk.warning is None or chunk.warning != chunk_parse_warning, \
+                    f"There shouldn't be an error for chunk {chunk}"
+
+            if chunk.token_count > abs_max_chunk_size_snippets:
+                assert chunk.warning and chunk.warning != chunk_parse_warning, \
+                    f"Size warning trumps parsing warning ({chunk})"
+            elif syntax_error:
+                assert chunk.warning == chunk_parse_warning, \
+                    f"If there is a syntax error and no size problems, this should be the warning messsage ({chunk})"
