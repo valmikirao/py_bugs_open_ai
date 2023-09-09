@@ -2,9 +2,10 @@
 import ast
 import itertools
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import md5
-from typing import Iterable, List, Optional, Any, Tuple, NamedTuple, TypeVar, Type, cast, Callable, Dict
+from math import ceil
+from typing import Iterable, List, Optional, Any, Tuple, NamedTuple, TypeVar, Type, cast, Callable
 from uuid import uuid4, UUID
 import tiktoken
 from scipy import spatial  # type: ignore
@@ -25,6 +26,30 @@ def _cosine_wrapper(u: List[float], v: List[float]) -> float:
     return spatial.distance.cosine(u, v)
 
 
+class CodeChunkException(Exception):
+    def __init__(self, message: str, is_error: bool):
+        super().__init__()
+        self.message = message
+        self.is_error = is_error
+
+
+class ChunkSizeException(CodeChunkException):
+    def __init__(self, token_count: int, max_size: int, is_error: bool):
+        error_or_warning = 'ERROR' if is_error else 'WARNING'
+        message = f"{error_or_warning}: Chunk size {token_count} bigger than max size {max_size}"
+        super().__init__(message=message, is_error=is_error)
+
+
+class ChunkErrorFoundException(CodeChunkException):
+    def __init__(self, message: str):
+        super().__init__(message=message, is_error=True)
+
+
+class ChunkParseException(CodeChunkException):
+    def __init__(self):
+        super().__init__(message='WARNING: Unable to parse chunk', is_error=False)
+
+
 @dataclass
 class CodeChunk:
     file: str
@@ -35,19 +60,10 @@ class CodeChunk:
     code: str
     peer_group: UUID
     token_count: int
-    error: Optional[str] = None
-    warning: Optional[str] = None
+    exceptions: List[CodeChunkException] = field(default_factory=lambda: [])
 
     def get_hash(self):
         return md5(self.code.encode()).hexdigest()[:10]
-
-    def set_exception(self, message: str, error: bool) -> 'CodeChunk':
-        prefix = 'ERROR' if error else 'WARNING'
-        if error:
-            self.error = f"{prefix}: {message}"
-        else:
-            self.warning = f"{prefix}: {message}"
-        return self
 
     def check_is_valid(self) -> bool:
         """
@@ -59,6 +75,34 @@ class CodeChunk:
             return False
         else:
             return True
+
+    def has_exception(self, is_error: Optional[bool] = None,
+                      of_type: Optional[Type[CodeChunkException]] = None) -> bool:
+        """
+        Says whether this chunk has any warnings
+        If is_error set, returns True only if any of the exeptions have .is_error set to the same value
+        if of_type is set, only returns true only if any of the exceptions are of type of_type
+        """
+        def _is_error_check(exception_: CodeChunkException) -> bool:
+            if is_error is None:
+                return True
+            elif exception_.is_error is is_error:
+                return True
+            else:
+                return False
+
+        def _of_type_check(exception_: CodeChunkException) -> bool:
+            if of_type is None:
+                return True
+            elif isinstance(exception_, of_type):
+                return True
+            else:
+                return False
+
+        for exception in self.exceptions:
+            if _is_error_check(exception) and _of_type_check(exception):
+                return True
+        return False
 
 
 T = TypeVar('T')
@@ -93,21 +137,64 @@ class CodeChunker(ast.NodeVisitor):
             self.abs_max_chunk_size = abs_max_chunk_size
         assert_strict(self.abs_max_chunk_size >= self.max_chunk_size)
 
-        self._chunks_by_peer_group: List[List[CodeChunk]] = []
-        self._current_peer_group = uuid4()
+        self._current_peer_group = uuid4()  # used in _populate_chunks_by_peer_group()
         self._code_lines = code.split('\n')
         self._tree = ast.parse(code)
+        # see .generic_visit() for how this is populated/what this is
+        self._chunks_by_peer_group: List[List[CodeChunk]] = []
 
+        self._populate_chunks_by_peer_group()
+
+    def _populate_chunks_by_peer_group(self):
+        # just calls .visit(), but trying to make clear calling .visit() will populate ._chunks_by_peer_group
+        # .visit() ends up calling .generic_visit(), where the magic happens
         self.visit(self._tree)
 
     def get_chunks(self) -> Iterable[CodeChunk]:
+        """
+        The algorythm for chunking the code is roughly as follows:
+            - Divide the code into "peer_groups", which will contain chunks that it thinks makes sense to keep together
+                - Already done in __init__()
+            - Tries to merge those peer groups so they're smaller than .max_chunk_size but biggest possible
+                - Sometimes we are left with chunks bigger than .max_chunk_size.  Then, if the chunk is also
+                  bigger than .abs_max_chunk_size, we add a message to the .warning or .error of the chunk, depending
+                  on .strict_chunk_size
+                - We also try to keep these chunks as legitimate, compilable python code.  If we can't, we also
+                  add a ChunkParseException() to exceptions
+        """
         for peer_group in self._chunks_by_peer_group:
-            yield from self.chunk_up_peer_group(peer_group)
+            # for each peer group, try to merge the chunks into the largest possible which is less than the
+            # .max_chunk_size
+            yield from self.merge_peer_group_chunks(peer_group)
 
-    def _get_chunk_size_exception_message(self, chunk: CodeChunk) -> str:
-        return f"Chunk size {chunk.token_count} bigger than max size {self.abs_max_chunk_size}"
+    def merge_peer_group_chunks(self, peer_group: List[CodeChunk]) -> Iterable[CodeChunk]:
+        """
+        Goes through and merges the chunks in the peer groups to be biggest possible but less than
+        max_chunk_size.
 
-    def chunk_up_peer_group(self, peer_group: List[CodeChunk]) -> Iterable[CodeChunk]:
+        Algorythm is roughly:
+        goal_min_size = see .get_goal_min_size()
+        last_chunk = empty
+        for chunk in peer_group:
+            concat_chunk = last_chunk + chunk
+            if concat_chunk > goal_min_size:
+                if concat_chunk < max_chunk_size and concat_chunk.is_valid():
+                    yield concat_chunk
+                    clear last_chunk
+                elif last_chunk and last_chunk.is_valid():
+                    yield last_chunk
+                    last_chunk = chunk
+                elif concat_chunk > abs_max_chunk_size:
+                    yield concat_chunk with error or warning
+                    clear last_chunk
+                else:
+                    last_chunk = concat_chunk
+            else:
+                last_chunk = concat_chunk
+
+        if last_chunk:
+            yield last_chunk with to-big or parse exceptions
+        """
         if peer_group:
             if len(peer_group) >= 2:
                 total_token_count = self.combine_from_to_chunks(peer_group[0], peer_group[-1]).token_count
@@ -130,13 +217,15 @@ class CodeChunker(ast.NodeVisitor):
                         yield concat_chunk
                         last_chunk = None
                     elif last_chunk is not None and last_chunk.check_is_valid():
-                        assert last_chunk.token_count <= self.abs_max_chunk_size
+                        assert_strict(last_chunk.token_count <= self.abs_max_chunk_size)
                         yield last_chunk
                         last_chunk = chunk
                     elif concat_chunk.token_count > self.abs_max_chunk_size:
-                        concat_chunk = concat_chunk.set_exception(
-                            self._get_chunk_size_exception_message(concat_chunk), error=self.strict_chunk_size
-                        )
+                        concat_chunk.exceptions.append(ChunkSizeException(
+                            token_count=concat_chunk.token_count,
+                            max_size=self.max_chunk_size,
+                            is_error=self.strict_chunk_size
+                        ))
                         yield concat_chunk
                         last_chunk = None
                     else:
@@ -146,23 +235,25 @@ class CodeChunker(ast.NodeVisitor):
 
             if last_chunk is not None:
                 if not last_chunk.check_is_valid():
-                    last_chunk = last_chunk.set_exception(
-                        CHUNK_PARSE_MESSAGE, error=self.strict_chunk_size
-                    )
-                elif last_chunk.token_count > self.abs_max_chunk_size:
-                    last_chunk = last_chunk.set_exception(
-                        self._get_chunk_size_exception_message(last_chunk), error=self.strict_chunk_size
-                    )
+                    last_chunk.exceptions.append(ChunkParseException())
+                if last_chunk.token_count > self.abs_max_chunk_size:
+                    last_chunk.exceptions.append(ChunkSizeException(
+                        token_count=last_chunk.token_count,
+                        max_size=self.max_chunk_size,
+                        is_error=self.strict_chunk_size
+                    ))
 
                 yield last_chunk
 
     @staticmethod
     def get_goal_min_size(total_token_count: int, max_chunk_size: int) -> int:
-        goal_min_size = total_token_count  # will try to get each chunk up to this size
-        goal_num_chunks = 1
-        while goal_min_size > max_chunk_size:
-            goal_num_chunks += 1
-            goal_min_size = total_token_count // goal_num_chunks
+        """
+        Given the total count and the max size, finds the way to break up the chunk which will have roughly
+        equal sized chunks
+        """
+        goal_num_chunks = ceil(total_token_count / max_chunk_size)
+        goal_min_size = round(total_token_count / goal_num_chunks)
+
         return goal_min_size
 
     def get_token_count(self, code: str) -> int:
@@ -184,6 +275,9 @@ class CodeChunker(ast.NodeVisitor):
 
     def make_code_chunk(self, lineno: int, end_lineno: int, col_offset: int, end_col_offset: int,
                         token_count: Optional[int] = None, peer_group: Optional[UUID] = None) -> CodeChunk:
+        """
+        Makes a code chunk from the metadata passed
+        """
         lines = self._code_lines[lineno - 1:end_lineno]
         if indent_match := re.search(r'^\s+', lines[0]):
             indent_len = len(indent_match.group(0))
@@ -218,7 +312,7 @@ class CodeChunker(ast.NodeVisitor):
         )
 
     def _get_children(self, node: ast.AST, of_type: Type[ast.AST] = ast.AST) -> Iterable[ast.AST]:
-        for field, value in ast.iter_fields(node):
+        for _, value in ast.iter_fields(node):
             if isinstance(value, list):
                 for item in value:
                     if isinstance(item, of_type):
@@ -248,8 +342,13 @@ class CodeChunker(ast.NodeVisitor):
 
     def generic_visit(self, node) -> Any:
         """
-        Note: this should probably not use NodeVisitor anymore, and then also pass values like peer_group
-        in a more functional manner.  TODO
+        Populates ._chunk_by_peer_group.  This is a list of lists, with each list representing a "peer group", meaning
+        peers in the same node.  If one of the peers is > max_chunk_size, it descends the tree to the next
+        peer group
+
+        Note: If I were to write this from scratch, I would probably not use ast.NodeVisitor and do this more,
+        functionally, since it doesn't use much of ast.NodeVisitor's functionality and has to store information
+        by changing the state of the instance, which I hate
         """
         chunk = self.chunk_from_node(node)
         new_peer_group: Optional[UUID]
@@ -272,7 +371,7 @@ class CodeChunker(ast.NodeVisitor):
                 self._chunks_by_peer_group.append([header_chunk])
                 new_peer_group = header_chunk.peer_group
             else:
-                # might be too big, will determine to warn or error in .chunk_up_peer_group()
+                # might be too big, will determine to warn or error in .merge_peer_group_chunks()
                 chunk.peer_group = uuid4()
                 self._chunks_by_peer_group.append([chunk])
                 children_to_visit = []

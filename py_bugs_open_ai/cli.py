@@ -18,8 +18,8 @@ from py_bugs_open_ai.diff import get_lines_diffs_by_file
 from py_bugs_open_ai.models.base import CacheProtocol
 from py_bugs_open_ai.models.examples import ExamplesFile
 from py_bugs_open_ai.open_ai_client import OpenAiClient
-from py_bugs_open_ai.py_bugs_open_ai import CodeChunker, BugFinder, CodeChunk, QueryConstructor
-
+from py_bugs_open_ai.py_bugs_open_ai import CodeChunker, BugFinder, CodeChunk, QueryConstructor, \
+    ChunkErrorFoundException
 
 DEFAULT_CONFIG_FILES = [
     'pybugsai.cfg',
@@ -146,6 +146,7 @@ def _main(abs_max_chunk_size: int, api_key: str, cache_dir: str, die_after: int,
 
     error_chunks: List[CodeChunk] = []
     warning_chunks: List[CodeChunk] = []
+    skipped_chunks: List[CodeChunk] = []
     file_list: List[str]
     line_diffs_by_file: MutableMapping[str, Set[int]] = {}
     if files_from_stdin:
@@ -178,6 +179,7 @@ def _main(abs_max_chunk_size: int, api_key: str, cache_dir: str, die_after: int,
             open_ai_client=open_ai_client,
             query_constructor=query_constructor
         )
+
     for file_, code_chunks in chunks_by_file.items():
         for code_chunk in code_chunks:
             click.echo(f"{_chunk_header(code_chunk)} - ", nl=False)
@@ -190,20 +192,21 @@ def _main(abs_max_chunk_size: int, api_key: str, cache_dir: str, die_after: int,
             else:
                 skip_because_not_in_diff = False
 
-            if not skip_because_not_in_diff and code_chunk.error is None and code_chunk.warning is None:
+            if not skip_because_not_in_diff and not code_chunk.has_exception():
                 has_bugs, bugs_description = bug_finder.find_bugs(code_chunk.code, refresh_cache=refresh_cache)
                 if has_bugs:
-                    code_chunk.error = bugs_description
+                    code_chunk.exceptions.append(ChunkErrorFoundException(bugs_description))
+
             code_chunk_hash = code_chunk.get_hash()
-            if not skip_because_not_in_diff and code_chunk.error is not None and code_chunk_hash not in skip_chunks:
+            if not skip_because_not_in_diff and code_chunk.has_exception(is_error=True) and \
+                    code_chunk_hash not in skip_chunks:
                 click.echo(ERROR_OUT)
                 error_chunks.append(code_chunk)
-            elif not skip_because_not_in_diff and code_chunk.error is not None and code_chunk_hash in skip_chunks:
+            elif not skip_because_not_in_diff and code_chunk.has_exception(is_error=True) and \
+                    code_chunk_hash in skip_chunks:
                 click.echo(SKIP_OUT)
-                code_chunk.warning = 'SKIPPED: ' + code_chunk.error
-                code_chunk.error = None
-                warning_chunks.append(code_chunk)
-            elif not skip_because_not_in_diff and code_chunk.warning is not None:
+                skipped_chunks.append(code_chunk)
+            elif not skip_because_not_in_diff and code_chunk.has_exception(is_error=False):
                 click.echo(WARN_OUT)
                 warning_chunks.append(code_chunk)
             elif skip_because_not_in_diff:
@@ -217,19 +220,22 @@ def _main(abs_max_chunk_size: int, api_key: str, cache_dir: str, die_after: int,
         if len(error_chunks) >= die_after:
             break
     divider = '-' * 80
-    if len(warning_chunks) > 0:
-        click.echo(_yellow(divider), file=sys.stderr)
-        click.echo(_yellow(f"{len(warning_chunks)} warnings"), file=sys.stderr)
-        for chunk in warning_chunks:
-            click.echo(_yellow(f"{_chunk_header(chunk)} - {chunk.warning}"))
-        click.echo(_yellow(divider), file=sys.stderr)
-    if len(error_chunks) > 0:
-        click.echo(_red(divider), file=sys.stderr)
-        click.echo(_red(f'{len(error_chunks)} errors found'), file=sys.stderr)
-        for chunk in error_chunks:
-            click.echo(_red(f"{_chunk_header(chunk)} - {chunk.error}"))
-        click.echo(_red(divider), file=sys.stderr)
 
+    def _summary_formatter(chunks: List[CodeChunk], color_func: Callable[[str], str], header_template: str):
+        if len(chunks) > 0:
+            click.echo(color_func(divider), file=sys.stderr)
+            header = header_template.format(count=len(chunks))
+            click.echo(color_func(header), file=sys.stderr)
+            for chunk in chunks:
+                exception_messages = '; '.join(e.message for e in chunk.exceptions)
+                click.echo(color_func(f"{_chunk_header(chunk)} - {exception_messages}"))
+            click.echo(color_func(divider), file=sys.stderr)
+
+    _summary_formatter(warning_chunks, _yellow, '{count} warnings')
+    _summary_formatter(skipped_chunks, _yellow, '{count} skipper')
+    _summary_formatter(error_chunks, _red, '{count} errors')
+
+    if len(error_chunks) > 0:
         sys.exit(1)
     else:
         click.echo(_green('No errors found'))
