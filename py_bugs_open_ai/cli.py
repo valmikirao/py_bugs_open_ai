@@ -5,7 +5,8 @@ import re
 import sys
 from collections import OrderedDict
 from configparser import ConfigParser
-from typing import List, Callable, Set, Iterator, Tuple, MutableMapping, Optional, Dict, Iterable, cast, TypeVar
+from dataclasses import dataclass, field
+from typing import List, Callable, Set, Iterator, Tuple, Optional, Dict, Iterable, cast, TypeVar, Protocol
 
 import click
 import yaml
@@ -87,13 +88,27 @@ def prime_embeddings_cache(chunks: Iterable[CodeChunk], open_ai_client: OpenAiCl
         open_ai_client.get_embeddings(texts=texts_iter)
 
 
-def should_skip_because_not_in_diff(code_chunk, line_diffs):
-    chunk_linenos = range(code_chunk.lineno, code_chunk.end_lineno)
+def should_skip_because_not_in_diff(code_chunk: CodeChunk, line_diffs: Set[int]):
+    if code_chunk.end_lineno == 30 and code_chunk.file == 'test-0.py':
+        pass
+    chunk_linenos = range(code_chunk.lineno, code_chunk.end_lineno + 1)
     if any(lineno in line_diffs for lineno in chunk_linenos):
         skip_because_not_in_diff = False
     else:
         skip_because_not_in_diff = True
     return skip_because_not_in_diff
+
+
+def _color_func(color: str) -> Callable[[str], str]:
+    def _func(message: str) -> str:
+        return f"{color}{message}\033[0m"
+
+    return _func
+
+
+_red = _color_func('\033[91m')
+_yellow = _color_func('\033[93m')
+_green = _color_func('\033[92m')
 
 
 def _main(abs_max_chunk_size: int, api_key: str, cache_dir: str, die_after: int, diff_from_stdin: bool,
@@ -130,31 +145,16 @@ def _main(abs_max_chunk_size: int, api_key: str, cache_dir: str, die_after: int,
     else:
         query_constructor = None
 
-    def _color_func(color: str) -> Callable[[str], str]:
-        def _func(message: str) -> str:
-            return f"{color}{message}\033[0m"
-
-        return _func
-
-    _red = _color_func('\033[91m')
-    _yellow = _color_func('\033[93m')
-    _green = _color_func('\033[92m')
-
-    def _chunk_header(chunk: CodeChunk) -> str:
-        return f"{chunk.file}:{chunk.lineno}-{chunk.end_lineno};" \
-               f" {chunk.get_hash()} token count: {chunk.token_count}"
-
-    error_chunks: List[CodeChunk] = []
-    warning_chunks: List[CodeChunk] = []
-    skipped_chunks: List[CodeChunk] = []
     file_list: List[str]
-    line_diffs_by_file: MutableMapping[str, Set[int]] = {}
+    line_diffs_by_file: Optional[Dict[str, Set[int]]]
     if files_from_stdin:
+        line_diffs_by_file = None
         file_list = [line.strip('\n') for line in sys.stdin]
     elif diff_from_stdin:
         line_diffs_by_file = get_lines_diffs_by_file(sys.stdin)
         file_list = sorted(line_diffs_by_file.keys())
     else:
+        line_diffs_by_file = None
         file_list = file
     chunks_by_file: Dict[str, List[CodeChunk]] = OrderedDict()
 
@@ -180,45 +180,23 @@ def _main(abs_max_chunk_size: int, api_key: str, cache_dir: str, die_after: int,
             query_constructor=query_constructor
         )
 
-    for file_, code_chunks in chunks_by_file.items():
-        for code_chunk in code_chunks:
-            click.echo(f"{_chunk_header(code_chunk)} - ", nl=False)
+    def _echo(message: str, nl: bool = True, err: bool = False) -> None:
+        click.echo(message, nl=nl, err=err)
 
-            if diff_from_stdin:
-                skip_because_not_in_diff = should_skip_because_not_in_diff(
-                    code_chunk=code_chunk,
-                    line_diffs=line_diffs_by_file[file_]
-                )
-            else:
-                skip_because_not_in_diff = False
+    grouped_chunks = group_chunks_from_ai(
+        bug_finder=bug_finder,
+        chunks_by_file=chunks_by_file,
+        die_after=die_after,
+        line_diffs_by_file=line_diffs_by_file,
+        refresh_cache=refresh_cache,
+        skip_chunks=skip_chunks,
+        echo=_echo
+    )
 
-            if not skip_because_not_in_diff and not code_chunk.has_exception():
-                has_bugs, bugs_description = bug_finder.find_bugs(code_chunk.code, refresh_cache=refresh_cache)
-                if has_bugs:
-                    code_chunk.exceptions.append(ChunkErrorFoundException(bugs_description))
+    error_chunks = grouped_chunks.error_chunks
+    skipped_chunks = grouped_chunks.skipped_chunks
+    warning_chunks = grouped_chunks.warning_chunks
 
-            code_chunk_hash = code_chunk.get_hash()
-            if not skip_because_not_in_diff and code_chunk.has_exception(is_error=True) and \
-                    code_chunk_hash not in skip_chunks:
-                click.echo(ERROR_OUT)
-                error_chunks.append(code_chunk)
-            elif not skip_because_not_in_diff and code_chunk.has_exception(is_error=True) and \
-                    code_chunk_hash in skip_chunks:
-                click.echo(SKIP_OUT)
-                skipped_chunks.append(code_chunk)
-            elif not skip_because_not_in_diff and code_chunk.has_exception(is_error=False):
-                click.echo(WARN_OUT)
-                warning_chunks.append(code_chunk)
-            elif skip_because_not_in_diff:
-                click.echo(NOT_IN_DIFF_OUT)
-            else:
-                click.echo(OK_OUT)
-
-            if len(error_chunks) >= die_after:
-                click.echo(_red(f'Dying after {len(error_chunks)} errors'), err=True)
-                break
-        if len(error_chunks) >= die_after:
-            break
     divider = '-' * 80
 
     def _summary_formatter(chunks: List[CodeChunk], color_func: Callable[[str], str], header_template: str):
@@ -239,6 +217,83 @@ def _main(abs_max_chunk_size: int, api_key: str, cache_dir: str, die_after: int,
         sys.exit(1)
     else:
         click.echo(_green('No errors found'))
+
+
+class EchoFunc(Protocol):
+    def __call__(self, message: str, nl: bool = True, err: bool = False) -> None:
+        ...
+
+
+def echo_func_noop(message: str, nl: bool = True, err: bool = False) -> None:
+    pass
+
+
+def _chunk_header(chunk: CodeChunk) -> str:
+    return f"{chunk.file}:{chunk.lineno}-{chunk.end_lineno};" \
+           f" {chunk.get_hash()} token count: {chunk.token_count}"
+
+
+@dataclass
+class GroupedChunks:
+    error_chunks: List[CodeChunk] = field(default_factory=lambda: [])
+    warning_chunks: List[CodeChunk] = field(default_factory=lambda: [])
+    skipped_chunks: List[CodeChunk] = field(default_factory=lambda: [])
+
+
+def group_chunks_from_ai(bug_finder: BugFinder, chunks_by_file: Dict[str, List[CodeChunk]], die_after: int,
+                         line_diffs_by_file: Optional[Dict[str, Set[int]]],
+                         refresh_cache: bool, skip_chunks: Set[str], echo: EchoFunc = echo_func_noop) \
+        -> GroupedChunks:
+
+    error_chunks: List[CodeChunk] = []
+    warning_chunks: List[CodeChunk] = []
+    skipped_chunks: List[CodeChunk] = []
+    chunks_by_file_items = list(chunks_by_file.items())
+    for file_, code_chunks in chunks_by_file_items:
+        for code_chunk in code_chunks:
+            echo(f"{_chunk_header(code_chunk)} - ", nl=False)
+
+            if line_diffs_by_file is not None:
+                skip_because_not_in_diff = should_skip_because_not_in_diff(
+                    code_chunk=code_chunk,
+                    line_diffs=line_diffs_by_file.get(file_, set())
+                )
+            else:
+                skip_because_not_in_diff = False
+
+            if not skip_because_not_in_diff and not code_chunk.has_exception() \
+                    and code_chunk.get_hash() not in skip_chunks:
+                has_bugs, bugs_description = bug_finder.find_bugs(code_chunk.code, refresh_cache=refresh_cache)
+                if has_bugs:
+                    code_chunk.exceptions.append(ChunkErrorFoundException(bugs_description))
+
+            code_chunk_hash = code_chunk.get_hash()
+            if not skip_because_not_in_diff and code_chunk.has_exception(is_error=True) and \
+                    code_chunk_hash not in skip_chunks:
+                echo(ERROR_OUT)
+                error_chunks.append(code_chunk)
+            elif not skip_because_not_in_diff and code_chunk_hash in skip_chunks:
+                echo(SKIP_OUT)
+                skipped_chunks.append(code_chunk)
+            elif not skip_because_not_in_diff and code_chunk.has_exception(is_error=False):
+                echo(WARN_OUT)
+                warning_chunks.append(code_chunk)
+            elif skip_because_not_in_diff:
+                echo(NOT_IN_DIFF_OUT)
+            else:
+                echo(OK_OUT)
+
+            if len(error_chunks) >= die_after:
+                echo(_red(f'Dying after {len(error_chunks)} errors'), err=True)
+                break
+        if len(error_chunks) >= die_after:
+            break
+
+    return GroupedChunks(
+        error_chunks=error_chunks,
+        skipped_chunks=skipped_chunks,
+        warning_chunks=warning_chunks
+    )
 
 
 def _file_for_help(file: str) -> str:

@@ -1,22 +1,24 @@
 import os
 import re
 from collections import defaultdict
-from typing import Iterable, MutableMapping, Set
+from typing import Iterable, Set, Dict
 
+from py_bugs_open_ai.utils import assert_strict
 
 REMOVED_FILE_NAME_PREFIX = f'--- a{os.path.sep}'
 FILE_NAME_PREFIX = f'+++ b{os.path.sep}'
 
 
-def get_lines_diffs_by_file(in_lines: Iterable[str]) -> MutableMapping[str, Set[int]]:
+def get_lines_diffs_by_file(in_lines: Iterable[str]) -> Dict[str, Set[int]]:
     file = ''
     added_lineno = 0
     removed_lineno = 0
-    line_diffs_by_file: MutableMapping[str, Set[int]] = defaultdict(set)
+    line_diffs_by_file: Dict[str, Set[int]] = defaultdict(set)
     for line in in_lines:
         if line.startswith(FILE_NAME_PREFIX):
             match = re.search(r'^' + re.escape(FILE_NAME_PREFIX) + r'([^\t\n\r]*)', line)
-            assert match, 'This should match, is this a valid git diff?'
+            assert_strict(match is not None, 'This should match, is this a valid git diff?')
+            assert match
             file = match.group(1)
         elif line.startswith('@@'):
             if added_match := re.search(r'\+(\d+)', line):

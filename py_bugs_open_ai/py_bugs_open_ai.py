@@ -2,6 +2,7 @@
 import ast
 import itertools
 import re
+from copy import deepcopy, copy
 from dataclasses import dataclass, field
 from hashlib import md5
 from math import ceil
@@ -15,6 +16,7 @@ from .models.base import CacheProtocol
 from .models.examples import Example
 from .models.open_ai import Message, Role
 from .open_ai_client import OpenAiClient
+from .utils import assert_strict, coalesce
 
 CHUNK_PARSE_MESSAGE = 'Unable to parse chunk'
 
@@ -32,12 +34,37 @@ class CodeChunkException(Exception):
         self.message = message
         self.is_error = is_error
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(message={self.message!r}, is_error={self.is_error!r})"
+
+    def __eq__(self, other: object) -> bool:
+        """For testing"""
+        if not isinstance(other, CodeChunkException):
+            return False
+        elif self.__class__ is not other.__class__:
+            return False
+        elif isinstance(other, CodeChunkException) and self.is_error != other.is_error:
+            return False
+        elif isinstance(other, CodeChunkException) and self.message != other.message:
+            return False
+        else:
+            return True
+
 
 class ChunkSizeException(CodeChunkException):
     def __init__(self, token_count: int, max_size: int, is_error: bool):
         error_or_warning = 'ERROR' if is_error else 'WARNING'
         message = f"{error_or_warning}: Chunk size {token_count} bigger than max size {max_size}"
         super().__init__(message=message, is_error=is_error)
+
+        self.token_count = token_count
+        self.max_size = max_size
+
+    def __copy__(self):
+        return self.__class__(token_count=self.token_count, max_size=self.max_size, is_error=self.is_error)
+
+    def __deepcopy__(self, memodict={}):
+        return copy(self)
 
 
 class ChunkErrorFoundException(CodeChunkException):
@@ -104,23 +131,29 @@ class CodeChunk:
                 return True
         return False
 
+    def replace(self, lineno: Optional[int] = None, end_lineno: Optional[int] = None,
+                exceptions: Optional[List[CodeChunkException]] = None, file: Optional[str] = None,
+                code: Optional[str] = None) -> 'CodeChunk':
+        """
+        Useful for testing.  Will add other attributes as needed
+        """
+        new_code_chunk = deepcopy(self)
+
+        if lineno is not None:
+            new_code_chunk.lineno = lineno
+        if end_lineno is not None:
+            new_code_chunk.end_lineno = end_lineno
+        if exceptions is not None:
+            new_code_chunk.exceptions = exceptions
+        if file is not None:
+            new_code_chunk.file = file
+        if code is not None:
+            new_code_chunk.code = code
+
+        return new_code_chunk
+
 
 T = TypeVar('T')
-
-
-def coalesce(*args: Optional[T]) -> T:
-    for arg in args:
-        if arg is not None:
-            return arg
-    raise TypeError('At least one argument needs to not be None')
-
-
-def assert_strict(is_true: bool, message: str = 'ERROR') -> None:
-    """
-    Assert that fails regardless of whether production key is set
-    """
-    if not is_true:
-        raise AssertionError(message)
 
 
 class CodeChunker(ast.NodeVisitor):
@@ -223,7 +256,7 @@ class CodeChunker(ast.NodeVisitor):
                     elif concat_chunk.token_count > self.abs_max_chunk_size:
                         concat_chunk.exceptions.append(ChunkSizeException(
                             token_count=concat_chunk.token_count,
-                            max_size=self.max_chunk_size,
+                            max_size=self.abs_max_chunk_size,
                             is_error=self.strict_chunk_size
                         ))
                         yield concat_chunk
@@ -239,7 +272,7 @@ class CodeChunker(ast.NodeVisitor):
                 if last_chunk.token_count > self.abs_max_chunk_size:
                     last_chunk.exceptions.append(ChunkSizeException(
                         token_count=last_chunk.token_count,
-                        max_size=self.max_chunk_size,
+                        max_size=self.abs_max_chunk_size,
                         is_error=self.strict_chunk_size
                     ))
 
